@@ -72,7 +72,7 @@ class FinancialAssistantConfig:
         console.print(f"Outline Agent created: {outline_agent.id}", style="bold green")
         self.OUTLINE_AGENT_ID = outline_agent.id
 
-
+        #Define JSON schema for the formulated questions
         formulate_questions_agent_response_schema = {
              "name": "research_questions_output",
              "strict": True,
@@ -94,7 +94,7 @@ class FinancialAssistantConfig:
                "additionalProperties": False
              }
         }          
-
+        # Create an agent to formulate questions from the outline
         formulate_questions_agent = assistant_manager.create_assistant(
             model="gpt-4o",
             name="formulate_questions_agent",
@@ -118,12 +118,10 @@ class FinancialAssistantConfig:
                 "json_schema": formulate_questions_agent_response_schema
             }
         )
-
-
         console.print(f"Formulate Questions Agent created: {formulate_questions_agent.id}", style="bold green")
         self.FORMULATE_QUESTIONS_AGENT_ID = formulate_questions_agent.id
 
-
+      # Create an agent to search the vector store for answers to financial questions
         vector_store_search_agent = assistant_manager.create_assistant(
             model="gpt-4o-mini",
             name="vector_store_search_agent",
@@ -150,15 +148,15 @@ class FinancialAssistantConfig:
             tools=[
                 {"type": "code_interpreter"},
                 {"type": "file_search"}],
-            temperature=0.07,
+            temperature=0.07, # Set temperature to 0.07 to reduce the risk of hallucinations
             top_p=0.90
         )
         console.print(f"Vector Store Search Agent created: {vector_store_search_agent.id}", style="bold green")
         self.VECTOR_STORE_SEARCH_AGENT_ID = vector_store_search_agent.id
 
-
+        # Configuration for the writer agent used to generate the final analysis report set to using Gemini experimental thinking 2.0 
         self.writer_agent_config = {
-            "temperature": 1,
+            "temperature": .7,
             "top_p": 0.95,
             "top_k": 64,
             "max_output_tokens": 65536,
@@ -177,10 +175,11 @@ class FinancialAssistantConfig:
             If a Q&A indicates data is not found for a particular topic, include a brief note (e.g., "Data unavailable for this item."). 
             Do not introduce external or speculative data. 
             Focus on clarity and detail based on what is in the Q&A. 
-            Do you think the company is a good investment?
+            Do you think the company is a good investment?            
+            Return only the analysis, no other text.
             Return the final analysis in Markdown format only.
         """
-
+        # Define JSON schema for the reviewer agent response allows review agent to terminate review loop
         reviewer_agent_response_schema = {
               "name": "research_questions_output",
               "strict": True,
@@ -207,7 +206,7 @@ class FinancialAssistantConfig:
                 "additionalProperties": False
               }
         }
-
+        # Create an agent to review the financial analysis report
         reviewer_agent = assistant_manager.create_assistant(
             model="gpt-4o",
             name="reviewer_agent",
@@ -272,7 +271,7 @@ class ResearchAssistantConfig:
 
         console.print("Creating Agents", style="bold yellow")
         
-
+        # Create an agent to outline the research paper
         outline_agent = assistant_manager.create_assistant(
                model="gpt-4o",
                 name="outline_agent",
@@ -295,7 +294,7 @@ class ResearchAssistantConfig:
         console.print(f"Outline Agent created: {outline_agent.id}", style="bold green")
         self.OUTLINE_AGENT_ID = outline_agent.id
 
-
+        # Define JSON schema for the formulated questions
         formulate_questions_agent_response_schema = {
              "name": "research_questions_output",
              "strict": True,
@@ -317,7 +316,7 @@ class ResearchAssistantConfig:
                "additionalProperties": False
              }
         }          
-
+        # Create an agent to formulate questions from the outline
         formulate_questions_agent = assistant_manager.create_assistant(
             model="gpt-4o",
             name="formulate_questions_agent",
@@ -328,9 +327,6 @@ class ResearchAssistantConfig:
                Limit yourself to a total of 15 questions. Do not assume any prior knowledge.
                follow json schema response format provided.  
             """,
-            tools=[],
-            tool_resources={},
-            metadata={},
             temperature=1.0,
             top_p=1.0,
             response_format={
@@ -342,7 +338,7 @@ class ResearchAssistantConfig:
         console.print(f"Formulate Questions Agent created: {formulate_questions_agent.id}", style="bold green")
         self.FORMULATE_QUESTIONS_AGENT_ID = formulate_questions_agent.id
 
-
+        # Create an agent to search the vector store for answers to research questions
         vector_store_search_agent = assistant_manager.create_assistant(
             model="gpt-4o-mini",
             name="vector_store_search_agent",
@@ -391,13 +387,40 @@ class ResearchAssistantConfig:
             tools=[
                 {"type": "code_interpreter"},
                 {"type": "file_search"}],
-            temperature=0.07,
+            temperature=0.07, # Set temperature to 0.07 to reduce the risk of hallucinations
             top_p=0.90,
         )
         console.print(f"Vector Store Search Agent created: {vector_store_search_agent.id}", style="bold green")
         self.VECTOR_STORE_SEARCH_AGENT_ID = vector_store_search_agent.id
 
 
+        self.writer_agent_config = {
+            "temperature":0.7,
+            "top_p":0.95,
+            "top_k":64,
+            "max_output_tokens": 65536,
+            "response_mime_type": "text/plain"
+        }
+            
+        self.WRITER_AGENT_SYSTEM_MESSAGE = """
+            You are an expert research paper writer. 
+            You will receive:
+            - A user prompt describing the company and reporting period
+            - A structured outline
+            - A set of Q&A data from the vector store
+
+            Use only the Q&A data provided to compose a coherent, in-depth summary of the research paper. 
+            Address every item in the outline. 
+            If a Q&A indicates data is not found for a particular topic, include a brief note (e.g., "Data unavailable for this item."). 
+            Do not introduce external or speculative data. 
+            Focus on clarity and detail based on what is in the Q&A. 
+            Do you think the company is a good investment?            
+            Return only the analysis, no other text.
+            Return the final analysis in Markdown format only.
+        """
+
+
+        # Define JSON schema for the reviewer agent response allows review agent to terminate review loop
         reviewer_agent_response_schema = {
               "name": "research_questions_output",
               "strict": True,
@@ -424,7 +447,7 @@ class ResearchAssistantConfig:
                 "additionalProperties": False
               }
         }
-
+        # Create an agent to review the research paper
         reviewer_agent = assistant_manager.create_assistant(
             model="gpt-4o",
             name="reviewer_agent",

@@ -12,10 +12,12 @@ from .openai_assistant import (
     process_formulate_question_agent_run,
     pretty_print,
     process_questions_with_search_agent,
-    process_reviewer_agent_run
+    process_reviewer_agent_run,
+    process_writer_agent
 )
 from .vector_storage import (
     create_vector_store,
+
     get_all_file_paths_in_directory,
     upload_files_to_vector_store_only
 )
@@ -47,7 +49,11 @@ class AnalysisWorkflow:
             OPEN_AI_KEY = self.OPEN_AI_API_KEY
             # Initialize Gemini for token counting
             genai.configure(api_key=self.GOOGLE_GEMINI_API_KEY)
-            gemini_model = genai.GenerativeModel("gemini-2.0-flash-thinking-exp-01-21")
+            gemini_model = genai.GenerativeModel(
+                model_name="gemini-2.0-flash-thinking-exp-01-21",
+                generation_config = self.WRITER_AGENT_CONFIG,
+                system_instruction= self.WRITER_AGENT_SYSTEM_MESSAGE,
+                tools='code_execution')
             TOKEN_LIMIT = int(os.getenv("TOKEN_LIMIT", 65536))
             TOKEN_BUFFER = int(os.getenv("TOKEN_BUFFER", 5000))
 
@@ -103,15 +109,7 @@ class AnalysisWorkflow:
                 combined_message += f"\nQ: {qa['question']}\nA: {qa['answer']}\n"
 
             # 4. Writer Agent with Gemini
-            gemini_model = genai.GenerativeModel(
-                model_name="gemini-2.0-flash-thinking-exp-01-21",
-                generation_config = self.WRITER_AGENT_CONFIG,
-                system_instruction= self.WRITER_AGENT_SYSTEM_MESSAGE,
-                tools='code_execution'
-            )
-
-            writer_thread = gemini_model.start_chat(history=[])
-            writer_chat = writer_thread.send_message(combined_message)
+            writer_chat = process_writer_agent(gemini_model, combined_message)
             console.print("Writer Agent Response:", style="bold magenta")
             pretty_print(writer_chat.text)                        
 
@@ -162,17 +160,14 @@ class AnalysisWorkflow:
                 console.print(f"Combined Message Tokens: {combined_message_tokens}", style="bold yellow")
 
                 if combined_message_tokens < (TOKEN_LIMIT - TOKEN_BUFFER):
-
-                    writer_thread = gemini_model.start_chat(history=[])
-                    writer_chat = writer_thread.send_message(combined_message)   
+                    writer_chat = process_writer_agent(gemini_model, combined_message)  
 
                     console.print("Writer Agent Response:", style="bold magenta")
                     pretty_print(writer_chat.text)
                 else:
                     console.print("Token limit exceeded. Sending final message and terminating.", style="bold red")
 
-                    writer_thread = gemini_model.start_chat(history=[])
-                    writer_chat = writer_thread.send_message(combined_message)
+                    writer_chat = process_writer_agent(gemini_model, combined_message)
 
                     console.print("Writer Agent Response:", style="bold magenta")
                     #pretty_print(writer_chat.text)

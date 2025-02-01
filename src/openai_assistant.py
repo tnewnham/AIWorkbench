@@ -631,7 +631,7 @@ def process_questions_with_search_agent(assistant_id, vector_store_id, questions
                 sys.stdout.flush()
                 
                 if run_status.status == 'completed':
-                    console.print("Run completed successfully", style="bold green")
+                    console.print("Run completed successfully\n", style="bold green")
                     answer = get_last_assistant_message(client, run.thread_id)
                     responses["questions_and_answers"].append({
                         "question": question,
@@ -694,3 +694,21 @@ def process_reviewer_agent_run(thread_id, run_id):
                 console.print("Response details:", style="bold red")
                 pretty_print(e.response)  # Output API error details unformatted
             break
+
+def process_writer_agent(gemini_model, combined_message):
+    """
+    Processes the writer agent.
+    - Constructs a new thread with the user's message.
+    - returns the last assistant message.
+    """
+    console = Console()
+    try:
+        writer_thread = gemini_model.start_chat(history=[])
+        if not writer_thread:
+            raise RuntimeError("Failed to start chat for writer agent.")
+        writer_chat = writer_thread.send_message(combined_message)
+        if not writer_chat or not writer_chat.text:
+            raise RuntimeError("Writer agent returned empty response.")
+        return writer_chat
+    except Exception as e:
+        raise RuntimeError("Error executing writer agent.") from e
