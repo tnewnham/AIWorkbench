@@ -1,0 +1,173 @@
+"""
+Interactive Terminal Program
+
+This program provides a classic command-line UI with the following commands:
+    --help               : List available commands.
+    --exit               : Exit the program.
+    --startassistantchat : Start a regular assistant chat session.
+    --runtasks           : Run one of the predefined assistant tasks.
+
+Commands that begin with '--' are interpreted as UI commands. If a message does not start with '--',
+it is treated as input to the current chat session (if one is active). When running a task,
+the program will prompt the user for a file path (optional) and for a custom message. The output
+of the task will be returned as an assistant message. All messages from the assistant are formatted
+and printed using the pretty_print function.
+"""
+
+import sys
+import os
+from rich.console import Console
+from src.openai_assistant import (
+    initialize_chat,
+    send_user_message,
+    start_run,
+    pretty_print
+)
+from src.assistant_config import FinancialAssistantConfig
+from src.analyst import (
+    process_outline_agent_run,
+    process_formulate_question_agent_run,
+    process_reviewer_agent_run
+)
+
+# Initialize a rich console for output formatting.
+console = Console()
+
+# Load a default configuration (using financial config for this example).
+config = FinancialAssistantConfig()
+config.create_agents()
+
+# Mapping for Assistant Tasks.
+# For demonstration purposes, we provide a processor function for some tasks.
+# (For the vector store search task, an interactive processor is not implemented.)
+assistant_tasks_menu = {
+    "1": {
+        "name": "Financial Analysis Task",
+        "processor": process_outline_agent_run  # Replace with appropriate function if needed.
+    },
+    "2": {
+        "name": "Research Report Task",
+        "processor": process_formulate_question_agent_run  # Replace as required.
+    }
+}
+
+current_chat = None
+
+def show_help():
+    """
+    Prints the help message with the available commands.
+    """
+    help_message = """
+Commands Available:
+--help                : Show this help menu.
+--exit                : Exit the program.
+--startassistantchat  : Start an assistant chat session; subsequent messages will be sent to the assistant.
+--runtasks            : Run one of the Assistant Tasks.
+
+Usage:
+In a regular chat session, type any text (not starting with '--') to send it to the assistant.
+To trigger a UI command, type '--' followed by the command (e.g., '--runtasks' or '--exit').
+"""
+    console.print(help_message, style="bold blue")
+
+def start_assistant_chat():
+    """
+    Initializes a new assistant chat session.
+    """
+    global current_chat
+    chat = initialize_chat()
+    if chat is None:
+        console.print("Failed to initialize chat session.", style="bold red")
+        return
+    current_chat = chat
+    console.print("Assistant chat session started. Type your message (or use commands starting with '--').", style="bold green")
+
+def run_task_flow():
+    """
+    Presents a menu of Assistant Tasks to run.
+
+    After task selection, the user is prompted for:
+        - A file path (optional; leave blank if none)
+        - A custom message for the task.
+    
+    The selected task is executed by starting a new chat session, sending the message (with an optional file attachment),
+    and running the task using its processor function. The output is then printed.
+    """
+    console.print("\nSelect an Assistant Task to run:", style="bold yellow")
+    for key, task in sorted(assistant_tasks_menu.items()):
+        console.print(f" {key}. {task['name']}", style="bold cyan")
+    
+    choice = input("Enter the choice number: ").strip()
+    task_info = assistant_tasks_menu.get(choice)
+    if not task_info:
+        console.print("Invalid task choice.", style="bold red")
+        return
+    
+    file_path = input("Enter file path (or leave blank if none): ").strip()
+    if file_path and not os.path.isfile(file_path):
+        console.print(f"File {file_path} does not exist.", style="bold red")
+        return
+    
+    user_message = input("Enter your message for the task: ").strip()
+    
+    # Start a new chat session for this task run.
+    chat = initialize_chat()
+    if chat is None:
+        console.print("Failed to initialize chat for task run.", style="bold red")
+        return
+    
+    # Send the message with an optional file attachment.
+    send_user_message(chat.id, user_message, file_path if file_path else None)
+    console.print(f"Sent message to {task_info['name']}. Starting task run...", style="bold green")
+    
+    # Start a new run for the selected task.
+    task_run = start_run(chat.id, task_info.get("agent_id", ""))
+    if task_run is None:
+        console.print("Failed to start task run.", style="bold red")
+        return
+    
+    # Process the task response using the corresponding processor. 
+    # It is assumed that the processor function takes the task run as input.
+    response = task_info["processor"](task_run)
+    console.print(f"Response from {task_info['name']}:", style="bold magenta")
+    pretty_print(response)
+
+def main_loop():
+    """
+    The main interactive loop that processes user input commands or messages.
+    """
+    global current_chat
+    console.print("\nWelcome to the Interactive Assistant Terminal!", style="bold green")
+    show_help()
+    while True:
+        user_input = input("\n[Command/Input] > ").strip()
+        if not user_input:
+            continue
+        # Check if it is a UI command (starting with '--'):
+        if user_input.startswith("--"):
+            command = user_input[2:].lower()
+            if command == "help":
+                show_help()
+            elif command == "exit":
+                console.print("Exiting program. Goodbye!", style="bold green")
+                sys.exit(0)
+            elif command == "startassistantchat":
+                start_assistant_chat()
+            elif command == "runtasks":
+                run_task_flow()
+            else:
+                console.print(f"Unknown command: {user_input}", style="bold red")
+        else:
+            # Assume the input is part of the current chat session.
+            if current_chat is None:
+                console.print("No active chat session. Use --startassistantchat to begin.", style="bold yellow")
+            else:
+                send_user_message(current_chat.id, user_input)
+                console.print("Message sent to assistant (response processing for chat sessions is not implemented interactively).\n", style="bold green")
+
+if __name__ == "__main__":
+    try:
+        main_loop()
+    except KeyboardInterrupt:
+        console.print("\nExiting program. Goodbye!", style="bold green")
+        sys.exit(0)

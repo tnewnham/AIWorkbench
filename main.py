@@ -4,7 +4,7 @@ from rich.console import Console
 from src.analyst import AnalysisWorkflow
 from src.assistant_config import FinancialAssistantConfig, ResearchAssistantConfig
 from src.openai_assistant import ClientConfig
-
+from src.openai_assistant import pretty_print
 load_dotenv()
 console = Console()
 
@@ -43,7 +43,11 @@ def main():
         OPEN_AI_API_KEY=ClientConfig.OPENAI_API_KEY
     )
     
-    workflow.run_analysis()
+    analysis_writer_response, analysis_combined_message = workflow.run_analysis()
+    pretty_print(analysis_writer_response)
+    #console.print(analysis_combined_message, style="bold magenta")
+
 
 if __name__ == "__main__":
     main()
+

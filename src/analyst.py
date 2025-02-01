@@ -135,12 +135,11 @@ class AnalysisWorkflow:
                 is_last_questions = reviewer_questions_json.get("last_questions", False)
 
                 if is_last_questions:
-
                     console.print("Review Passed", style="bold magenta")
                     console.print("Final writer input:", style="bold magenta")
-
-                    pretty_print(combined_message)
-                    break
+                    #pretty_print(combined_message)
+                    return writer_chat.text, combined_message
+                    #break
 
                 # If not final, the reviewer wants more clarifications
                 new_questions_and_answers = process_questions_with_search_agent(
@@ -171,14 +170,14 @@ class AnalysisWorkflow:
                     pretty_print(writer_chat.text)
                 else:
                     console.print("Token limit exceeded. Sending final message and terminating.", style="bold red")
-                    messages = [
-                        {"role": "system", "content": self.WRITER_AGENT_SYSTEM_MESSAGE},
-                        {"role": "user", "content": combined_message}
-                    ]
-                    writer_chat = gemini_model.get_chat_completion(messages)
+
+                    writer_thread = gemini_model.start_chat(history=[])
+                    writer_chat = writer_thread.send_message(combined_message)
+
                     console.print("Writer Agent Response:", style="bold magenta")
-                    pretty_print(writer_chat.text)
-                    break
+                    #pretty_print(writer_chat.text)
+                    return writer_chat.text, combined_message
+                    #break
 
         except Exception as e:
             console.print("An unexpected error occurred in the workflow:", style="bold red")
