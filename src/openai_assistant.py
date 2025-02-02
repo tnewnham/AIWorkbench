@@ -145,6 +145,7 @@ class ClientConfig:
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development")  # Default to development environment
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")             # Required API key for OpenAI services
     GOOGLE_GEMINI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")   # Optional: Google Gemini API key
+    BENDER = os.getenv("BENDER")
     
     # Set debug mode and polling interval based on environment.
     DEBUG_MODE = ENVIRONMENT == "development"  # True if in development mode
@@ -159,6 +160,9 @@ class ClientConfig:
         console = Console()
         required_vars = {
             "OPENAI_API_KEY": cls.OPENAI_API_KEY,
+            "GOOGLE_GEMINI_API_KEY": cls.GOOGLE_GEMINI_API_KEY,
+            "BENDER": cls.BENDER,
+            
         }
         # Check for missing environment variables.
         missing_vars = [var for var, value in required_vars.items() if not value]
@@ -189,7 +193,7 @@ def initialize_chat():
         console.print(str(e), style="bold red")
         return None
 
-def upload_file(client, file_path):
+def upload_file(file_path):
     """
     Uploads a file to OpenAI for assistant use.
     - Opens the file in binary read mode.
@@ -202,12 +206,12 @@ def upload_file(client, file_path):
     try:
         console.print(f"Uploading file: {file_path}", style="bold green")
         with open(file_path, "rb") as file:
-            response = client.files.create(
+            file = client.files.create(
                 file=file,
                 purpose="assistants"
             )
-        console.print(f"File uploaded successfully. ID: {response.id}", style="bold green")
-        return response.id
+        console.print(f"File uploaded successfully. ID: {file.id}", style="bold green")
+        return file.id
     except Exception as e:
         console.print("Error uploading file:", style="bold red")
         console.print(str(e), style="bold red")
@@ -333,20 +337,20 @@ def poll_run_status_and_submit_outputs(thread_id, run_id):
     start_time = datetime.datetime.now()
     while True:
         try:
-            run_status = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
+            run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
             elapsed_time = datetime.datetime.now() - start_time
             elapsed_seconds = int(elapsed_time.total_seconds())
             print(f"Elapsed Time: {elapsed_seconds} seconds", end='\r')
             sys.stdout.flush()
             
-            if run_status.status == 'completed':
+            if run.status == 'completed':
                 pretty_print("Run completed successfully\n")
                 process_run_completion(client, thread_id)
                 break
-            elif run_status.status == 'requires_action':
-                handle_required_action(client, run_status, thread_id, run_id)
-            elif run_status.status == 'failed':
-                handle_run_failure(run_status)
+            elif run.status == 'requires_action':
+                handle_required_action(client, run, thread_id)
+            elif run.status == 'failed':
+                handle_run_failure(run)
                 break
             else:
                 time.sleep(ClientConfig.POLL_INTERVAL)
@@ -358,7 +362,7 @@ def poll_run_status_and_submit_outputs(thread_id, run_id):
                 pretty_print(e.response)  # Output API error details unformatted
             break
 
-def handle_required_action(client, run_status, thread_id, run_id):
+def handle_required_action(client, run, thread_id):
     """
     Handles actions required by a run.
     - Specifically processes 'submit_tool_outputs' type actions.
@@ -366,8 +370,8 @@ def handle_required_action(client, run_status, thread_id, run_id):
     """
     console = Console()
 
-    if run_status.required_action.type == 'submit_tool_outputs':
-        tool_calls = run_status.required_action.submit_tool_outputs.tool_calls
+    if run.required_action.type == 'submit_tool_outputs':
+        tool_calls = run.required_action.submit_tool_outputs.tool_calls
         console.print("Tool Calls Received:", style="bold green")
         tool_outputs = []
         for tool_call in tool_calls:
@@ -403,7 +407,7 @@ def handle_required_action(client, run_status, thread_id, run_id):
         # Submit the aggregated tool outputs back to the API.
         client.beta.threads.runs.submit_tool_outputs(
             thread_id=thread_id,
-            run_id=run_id,
+            run_id=run.id,
             tool_outputs=tool_outputs
         )
         console.print("Tool outputs submitted successfully", style="bold green")
