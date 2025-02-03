@@ -54,8 +54,8 @@ def interactive_chat_session():
 
     # Display a retro-style welcome banner.ts
     welcome_banner = """
-    Welcome to ClassicChat
-    A Modern Take on Retro Terminal Chatbot
+    Hello User
+    I am a skillful chatbot
     """
     console.print(welcome_banner, style="bold cyan")
 

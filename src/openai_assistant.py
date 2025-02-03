@@ -354,14 +354,14 @@ def poll_run_status_and_submit_outputs(thread_id, run_id):
                 pretty_print("Run completed successfully\n")
                 # Retrieve the last message from the run
                 message_list = client.beta.threads.messages.list(thread_id=thread_id)
-                first_messgae_id = message_list.data[0].id  # Assuming this is available
-                message = client.beta.threads.messages.retrieve(thread_id=thread_id, message_id=first_messgae_id)                # Process the message content
+                last_message = message_list.data[0]  # Assuming this is available
+                #message = client.beta.threads.messages.retrieve(thread_id=thread_id, message_id=first_messgae_id)                # Process the message content
                 
-                formatted_content, text_content = process_message_content(client, message)                
+                formatted_content, text_content = process_message_content(client, last_message)                
                 pretty_print(text_content)
                 #print(formatted_content)
                 #print(message) # debug print statement
-                return message, text_content
+                return last_message, text_content
             elif run.status == 'requires_action':
                 handle_required_action(client, run, thread_id)
             elif run.status == 'failed':
