@@ -74,12 +74,10 @@ def interactive_chat_session():
         if user_message_text.lower() in ["exit", "quit"]:
             console.print("Exiting chat session. Goodbye!", style="bold magenta")
             break
-
         # Send the user's message to the chat thread.
         send_user_message(chat_thread.id, user_message_text)
         run = start_run(chat_thread.id, bender_assistant_id)
         poll_run_status_and_submit_outputs(chat_thread.id, run.id)
-
     else:
         console.print("No response received from the assistant. Please try again later.", style="bold red")
 
