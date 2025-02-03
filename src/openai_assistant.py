@@ -271,9 +271,9 @@ def start_run(thread_id, ASSISTANT_ID):
     run = client.beta.threads.runs.create(thread_id=thread_id, assistant_id=ASSISTANT_ID)
     return run
 
-def save_message_file(client, content_block, base_path="data/generated"):
+def save_message_file(client, file_id, base_path="data/generated"):
     """
-    Saves an image file contained in a message content block.
+    Saves a file using its file ID.
     - Ensures the target directory exists.
     - Downloads file content via API and writes it to disk.
     Returns the file path if saved; otherwise None.
@@ -283,18 +283,20 @@ def save_message_file(client, content_block, base_path="data/generated"):
         # Ensure the output directory exists.
         os.makedirs(base_path, exist_ok=True)
         
-        if hasattr(content_block, 'image_file'):
-            file_id = content_block.image_file.file_id
-            file_path = os.path.join(base_path, f"{file_id}.png")
-            
-            console.print(f"Downloading file: {file_id}", style="bold green")
-            file_data = client.files.content(file_id)
-            file_bytes = file_data.read()
-            
-            with open(file_path, "wb") as file:
-                file.write(file_bytes)
-            console.print(f"File saved to: {file_path}", style="bold green")
-            return file_path
+        # Retrieve file content
+        file_data = client.files.content(file_id)
+        file_bytes = file_data.read()
+        
+        # Define the file path
+        file_path = os.path.join(base_path, f"{file_id}.png")
+        
+        console.print(f"Downloading file: {file_id}", style="bold green")
+        
+        # Write the file content to disk
+        with open(file_path, "wb") as file:
+            file.write(file_bytes)
+        console.print(f"File saved to: {file_path}", style="bold green")
+        return file_path
     except Exception as e:
         console.print("Error saving file:", style="bold red")
         console.print(str(e), style="bold red")
@@ -303,37 +305,42 @@ def save_message_file(client, content_block, base_path="data/generated"):
 def process_message_content(client, message):
     """
     Processes the content of a message.
-    - Iterates over content blocks and distinguishes text from image files.
-    - For text, splits into non-empty lines; for image files, saves to disk.
+    - Iterates over content blocks and distinguishes text from image files and URLs.
+    - For text, prints the value; for image files, saves to disk; for image URLs, prints the URL.
     Returns a list of tuples (content_type, content).
     """
     formatted_content = []
     
     for content_block in message.content:
-        if hasattr(content_block, 'text'):
-            # Extract and process text content.
+        if content_block.type == 'text':
+            # Extract and print text content.
             text_content = content_block.text.value
-            for line in text_content.split('\n'):
-                if line.strip():
-                    formatted_content.append(("text", line))
-        elif hasattr(content_block, 'image_file'):
-            # Process file content by saving and recording its path.
-            file_path = save_message_file(client, content_block)
+            #pretty_print(text_content)
+            formatted_content.append(("text", text_content))
+        elif content_block.type == 'image_file':
+            # Process image file content by saving and recording its path.
+            file_id = content_block.image_file.file_id
+            file_path = save_message_file(client, file_id)
             if file_path:
                 formatted_content.append(("file", file_path))
+        elif content_block.type == 'image_url':
+            # Print the image URL
+            image_url = content_block.image_url.url
+            pretty_print(f"Image URL: {image_url}")
+            formatted_content.append(("url", image_url))
     
-    return formatted_content
+    return formatted_content, text_content
 
 def poll_run_status_and_submit_outputs(thread_id, run_id):
     """
     Continuously polls the status of a run until completion.
-    - If status is 'completed', processes run completion.
+    - If status is 'completed', retrieves the most recent message from the assistant using message retrieval.
     - If 'requires_action', handles required tool output submission.
     - If 'failed', handles failure output.
     Utilizes a polling interval based on ClientConfig.
     """
     client = OpenAI(api_key=ClientConfig.OPENAI_API_KEY)
-    
+    console = Console()
     start_time = datetime.datetime.now()
     while True:
         try:
@@ -345,8 +352,16 @@ def poll_run_status_and_submit_outputs(thread_id, run_id):
             
             if run.status == 'completed':
                 pretty_print("Run completed successfully\n")
-                process_run_completion(client, thread_id)
-                break
+                # Retrieve the last message from the run
+                message_list = client.beta.threads.messages.list(thread_id=thread_id)
+                first_messgae_id = message_list.data[0].id  # Assuming this is available
+                message = client.beta.threads.messages.retrieve(thread_id=thread_id, message_id=first_messgae_id)                # Process the message content
+                
+                formatted_content, text_content = process_message_content(client, message)                
+                pretty_print(text_content)
+                #print(formatted_content)
+                #print(message) # debug print statement
+                return message, text_content
             elif run.status == 'requires_action':
                 handle_required_action(client, run, thread_id)
             elif run.status == 'failed':
@@ -355,11 +370,11 @@ def poll_run_status_and_submit_outputs(thread_id, run_id):
             else:
                 time.sleep(ClientConfig.POLL_INTERVAL)
         except Exception as e:
-            pretty_print("API Error occurred:")
-            pretty_print(str(e))
+            console.print("API Error occurred:", style="bold red")
+            console.print(str(e), style="bold red")
             if hasattr(e, 'response'):
-                pretty_print("Response details:")
-                pretty_print(e.response)  # Output API error details unformatted
+                console.print("Response details:", style="bold red")
+                console.print(e.response, style="bold red")  # Output API error details unformatted
             break
 
 def handle_required_action(client, run, thread_id):
@@ -441,18 +456,17 @@ def process_run_completion(client, thread_id):
     for message in message_response.data:
         role = message.role.upper()
         console.print(f"Message from {role}:", style="bold green")
-        console.print("Raw Message Content:", style="bold green")
-        console.print(json.dumps(message.content, indent=4, default=str), style="bold green")
-        
+        #console.print("Raw Message Content:", style="bold green")
+        #console.print(json.dumps(message.content, indent=4, default=str), style="bold green")        
         # Process each content block in the message.
         formatted_content = process_message_content(client, message)
         
         console.print("Formatted Content:", style="bold green")
         for content_type, content in formatted_content:
-            if content_type == "text":
-                pretty_print(content)
-            elif content_type == "file":
+            if content_type == "file":
                 console.print(f"Generated file saved at: {content}", style="bold green")
+            # elif content_type == "text":
+            #     pretty_print(content)
 
 def execute_function(function_name, arguments):
     """

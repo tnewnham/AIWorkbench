@@ -29,7 +29,7 @@ load_dotenv()
 console = Console()
 
 
-class AnalysisWorkflow:
+class AnalysisTask:
 
     def __init__(self, user_prompt: str, folder_path: str, OUTLINE_AGENT_ID: str, FORMULATE_QUESTIONS_AGENT_ID: str, VECTOR_STORE_SEARCH_AGENT_ID: str, WRITER_AGENT_SYSTEM_MESSAGE: str, WRITER_AGENT_CONFIG: dict, REVIEWER_AGENT_ID: str, GOOGLE_GEMINI_API_KEY: str, OPEN_AI_API_KEY: str):
         self.user_prompt = user_prompt
