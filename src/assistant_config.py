@@ -81,7 +81,7 @@ class FinancialAssistantConfig:
                "properties": {
                  "questions": {
                    "type": "array",
-                   "description": "A list of straightforward questions derived from a research paper outline. No more than 15 questions.",
+                   "description": "A list of straightforward questions derived from a quarterly report analysis paper outline. No more than 15 questions.",
                    "items": {
                      "type": "string",
                      "description": "A single straightforward question."
@@ -98,7 +98,7 @@ class FinancialAssistantConfig:
         formulate_questions_agent = assistant_manager.create_assistant(
             model="gpt-4o",
             name="formulate_questions_agent",
-            description="An agent that formulates questions from a research paper outline.",
+            description="An agent that formulates questions from a company's quarterly report.",
             instructions="""
                 You are an expert at generating direct, finance-focused questions. 
                 You will receive an outline for a company's financial analysis. 
@@ -212,7 +212,7 @@ class FinancialAssistantConfig:
             name="reviewer_agent",
             description="An expert financial analyst that provides feedback.",
             instructions="""
-                You are an expert financial reviewer who critiques quarterly financial reports. 
+                You are an expert financial analyst who critiques quarterly financial reports. 
                 You are extremely detail-oriented, inquisitive and persnickety.
 
                 You receive:
@@ -277,12 +277,14 @@ class ResearchAssistantConfig:
                 name="outline_agent",
                 description="An agent that outlines a research paper.",
                 instructions="""
+                  return response as a json object.
                     You are an expert at planning research papers. 
                     The user will provide a topic and requirements. 
                     Your job is to create a detailed, specific outline. 
                     Break down each section with clear headings and subheadings. 
                     Include logical structure and any relevant subtopics or supporting points. 
                     Another agent will then formulate questions for each section to gather the facts needed to fill the outline.
+                    
 
             """,
             temperature=1.0,
@@ -322,10 +324,11 @@ class ResearchAssistantConfig:
             name="formulate_questions_agent",
             description="An agent that formulates questions from a research paper outline.",
             instructions="""
+              follow json schema response format. 
                You are an expert at formulating research questions. 
                You will receive an outline. For each bullet point, create at least one straightforward question that gathers the facts needed to satisfy that point. Avoid  complex or multi-part questions. 
                Limit yourself to a total of 15 questions. Do not assume any prior knowledge.
-               follow json schema response format provided.  
+                
             """,
             temperature=1.0,
             top_p=1.0,
@@ -373,7 +376,7 @@ class ResearchAssistantConfig:
                 Example
                 Input:
                 "What are the report's primary recommendations for cost reduction?"
-
+[]
                 Process:
 
                 Key terms: "report," "primary recommendations," "cost reduction."
@@ -403,9 +406,10 @@ class ResearchAssistantConfig:
         }
             
         self.WRITER_AGENT_SYSTEM_MESSAGE = """
+          Return response in markdown format.
             You are an expert research paper writer. 
             You will receive:
-            - A user prompt describing the company and reporting period
+            - A user prompt describing the research paper topic
             - A structured outline
             - A set of Q&A data from the vector store
 
@@ -413,10 +417,9 @@ class ResearchAssistantConfig:
             Address every item in the outline. 
             If a Q&A indicates data is not found for a particular topic, include a brief note (e.g., "Data unavailable for this item."). 
             Do not introduce external or speculative data. 
-            Focus on clarity and detail based on what is in the Q&A. 
-            Do you think the company is a good investment?            
+            Focus on clarity and detail based on what is in the Q&A.          
             Return only the analysis, no other text.
-            Return the final analysis in Markdown format only.
+            
         """
 
 

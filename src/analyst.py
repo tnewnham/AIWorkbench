@@ -17,7 +17,6 @@ from .openai_assistant import (
 )
 from .vector_storage import (
     create_vector_store,
-
     get_all_file_paths_in_directory,
     upload_files_to_vector_store_only
 )
@@ -32,6 +31,25 @@ console = Console()
 class AnalysisTask:
 
     def __init__(self, user_prompt: str, folder_path: str, OUTLINE_AGENT_ID: str, FORMULATE_QUESTIONS_AGENT_ID: str, VECTOR_STORE_SEARCH_AGENT_ID: str, WRITER_AGENT_SYSTEM_MESSAGE: str, WRITER_AGENT_CONFIG: dict, REVIEWER_AGENT_ID: str, GOOGLE_GEMINI_API_KEY: str, OPEN_AI_API_KEY: str):
+        
+        # Add explicit validation here to catch null values
+        missing_params = []
+        if not OUTLINE_AGENT_ID or not isinstance(OUTLINE_AGENT_ID, str):
+            missing_params.append("OUTLINE_AGENT_ID")
+        if not FORMULATE_QUESTIONS_AGENT_ID or not isinstance(FORMULATE_QUESTIONS_AGENT_ID, str):
+            missing_params.append("FORMULATE_QUESTIONS_AGENT_ID")
+        if not VECTOR_STORE_SEARCH_AGENT_ID or not isinstance(VECTOR_STORE_SEARCH_AGENT_ID, str):
+            missing_params.append("VECTOR_STORE_SEARCH_AGENT_ID")
+        if not REVIEWER_AGENT_ID or not isinstance(REVIEWER_AGENT_ID, str):
+            missing_params.append("REVIEWER_AGENT_ID")
+        if not GOOGLE_GEMINI_API_KEY or not isinstance(GOOGLE_GEMINI_API_KEY, str):
+            missing_params.append("GOOGLE_GEMINI_API_KEY")
+        if not OPEN_AI_API_KEY or not isinstance(OPEN_AI_API_KEY, str):
+            missing_params.append("OPEN_AI_API_KEY")
+            
+        if missing_params:
+            raise ValueError(f"Missing required parameters: {', '.join(missing_params)}")
+            
         self.user_prompt = user_prompt
         self.folder_path = folder_path
         self.OUTLINE_AGENT_ID = OUTLINE_AGENT_ID
@@ -44,6 +62,12 @@ class AnalysisTask:
         self.OPEN_AI_API_KEY = OPEN_AI_API_KEY
 
     def run_analysis(self):
+        # Add safeguard checks at runtime
+        assert self.OUTLINE_AGENT_ID, "OUTLINE_AGENT_ID is required"
+        assert self.FORMULATE_QUESTIONS_AGENT_ID, "FORMULATE_QUESTIONS_AGENT_ID is required"
+        assert self.VECTOR_STORE_SEARCH_AGENT_ID, "VECTOR_STORE_SEARCH_AGENT_ID is required"
+        assert self.REVIEWER_AGENT_ID, "REVIEWER_AGENT_ID is required"
+        
         try:
             # Validate environment settings
             OPEN_AI_KEY = self.OPEN_AI_API_KEY
@@ -57,13 +81,24 @@ class AnalysisTask:
             TOKEN_LIMIT = int(os.getenv("TOKEN_LIMIT", 65536))
             TOKEN_BUFFER = int(os.getenv("TOKEN_BUFFER", 5000))
 
+            # Process file paths
+            # If folder_path is a string, assume it's a directory path
+            # If it's a list, assume it's a list of file paths
+            if isinstance(self.folder_path, list):
+                file_paths = self.folder_path
+                # Create a temporary directory to store the vector store files
+                import tempfile
+                folder_dir = tempfile.mkdtemp()
+            else:
+                folder_dir = self.folder_path
+                file_paths = get_all_file_paths_in_directory(folder_dir)
+
             # Create a new vector store and load files from the given folder path
             search_agent_vector_store = create_vector_store(name="search_agent_vector_store")
             if not search_agent_vector_store:
                 raise RuntimeError("Failed to create vector store.")
 
             vector_store_id = search_agent_vector_store.id
-            file_paths = get_all_file_paths_in_directory(self.folder_path)
             upload_files_to_vector_store_only(vector_store_id, file_paths)
 
             # 1. Outline Agent

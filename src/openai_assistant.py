@@ -4,6 +4,8 @@ import time
 import json       
 import datetime   
 import sys        
+import traceback
+import logging
 
 # Third-party library imports for OpenAI API interaction, rich console output, and environment variable loading.
 from openai import OpenAI                    
@@ -14,6 +16,38 @@ from dotenv import load_dotenv
 
 # Immediately load environment variables from the .env file at module import.
 load_dotenv()  # Ensures environment variables are available throughout the module
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+class FunctionTool:
+    """Class to represent a function tool that can be called by the assistant"""
+    def __init__(self, function, config_type):
+        self.function = function
+        self.config_type = config_type
+
+# Modify function_tool_mapping to use dynamic imports in the lambda functions
+function_tool_mapping = {
+    "quarterly_financial_analytics": FunctionTool(
+        function=lambda user_prompt, folder_path: _execute_analysis_task(user_prompt, folder_path, "financial"),
+        config_type="analyst_function"
+    ),
+    "research_paper_analysis": FunctionTool(
+        function=lambda user_prompt, folder_path: _execute_analysis_task(user_prompt, folder_path, "research"),
+        config_type="analyst_function"
+    ),
+    # Add more function mappings as needed
+}
+
+def _execute_analysis_task(user_prompt, folder_path, config_type):
+    """Helper function to import and call analysis_task dynamically"""
+    # Import only when needed to avoid circular imports
+    from .task_functions import analysis_task
+    return analysis_task(user_prompt, folder_path, config_type)
 
 def pretty_print(response: str):
     """
@@ -150,6 +184,12 @@ class ClientConfig:
     # Set debug mode and polling interval based on environment.
     DEBUG_MODE = ENVIRONMENT == "development"  # True if in development mode
     POLL_INTERVAL = 2 if ENVIRONMENT == "development" else 5  # Faster polling in development
+
+    # Add new fields for analysis workflow assistants
+    OUTLINE_AGENT_ID = os.getenv("OUTLINE_AGENT_ID")
+    FORMULATE_QUESTIONS_AGENT_ID = os.getenv("FORMULATE_QUESTIONS_AGENT_ID")
+    VECTOR_STORE_SEARCH_AGENT_ID = os.getenv("VECTOR_STORE_SEARCH_AGENT_ID")
+    REVIEWER_AGENT_ID = os.getenv("REVIEWER_AGENT_ID")
 
     @classmethod
     def validate_config(cls):
@@ -354,14 +394,14 @@ def poll_run_status_and_submit_outputs(thread_id, run_id):
                 pretty_print("Run completed successfully\n")
                 # Retrieve the last message from the run
                 message_list = client.beta.threads.messages.list(thread_id=thread_id)
-                last_message = message_list.data[0]  # Assuming this is available
+                last_message = message_list.data[0]
                 #message = client.beta.threads.messages.retrieve(thread_id=thread_id, message_id=first_messgae_id)                # Process the message content
                 
                 formatted_content, text_content = process_message_content(client, last_message)                
                 pretty_print(text_content)
                 #print(formatted_content)
                 #print(message) # debug print statement
-                return last_message, text_content
+                return last_message, text_content, formatted_content
             elif run.status == 'requires_action':
                 handle_required_action(client, run, thread_id)
             elif run.status == 'failed':
@@ -407,19 +447,14 @@ def handle_required_action(client, run, thread_id):
             console.print(json.dumps(arguments, indent=6), style="bold green")
             
             console.print(f"Executing: {tool_call.function.name}", style="bold green")
-            # Execute the function with provided arguments.
-            function_output = execute_function(tool_call.function.name, arguments)
-            
-            tool_output = {
-                "tool_call_id": tool_call.id,
-                "output": json.dumps(function_output)
-            }
-            tool_outputs.append(tool_output)
+            # Execute the function with provided arguments but don't append to tool_outputs
+            # Just get the response for logging purposes
+            output, context = execute_function(thread_id, tool_call, tool_outputs)
             
             console.print("Function Output:", style="bold green")
-            console.print(json.dumps(function_output, indent=6), style="bold green")
+            pretty_print(output)
         
-        # Submit the aggregated tool outputs back to the API.
+        # Submit the tool outputs that were added by execute_function
         client.beta.threads.runs.submit_tool_outputs(
             thread_id=thread_id,
             run_id=run.id,
@@ -468,13 +503,91 @@ def process_run_completion(client, thread_id):
             # elif content_type == "text":
             #     pretty_print(content)
 
-def execute_function(function_name, arguments):
-    """
-    Executes a function based on its name and provided arguments.
-    - Currently a placeholder that returns a dummy successful result.
-    """
-    pretty_print(f"Executing function: {function_name} with arguments: {arguments}")
-    return {"result": "Function executed successfully"}
+def execute_function(thread_id, tool_call, tool_outputs_queue, gui_mode=True):
+    """Execute a function called by the assistant and submit outputs."""
+    try:
+        # Access properties correctly from the tool_call object
+        function_name = tool_call.function.name
+        logger.info(f"Executing function: {function_name}")
+        
+        # Parse the arguments JSON
+        function_args = json.loads(tool_call.function.arguments)
+        logger.info(f"Function arguments: {function_args}")
+        
+        # Get the function from the mapping
+        mapped_func = function_tool_mapping.get(function_name)
+        if mapped_func is None:
+            logger.error(f"Function {function_name} not found in function_tool_mapping")
+            error_output = json.dumps({"error": f"Unknown function: {function_name}"})
+            tool_outputs_queue.append({
+                "tool_call_id": tool_call.id,
+                "output": error_output
+            })
+            return error_output, "Error: unknown function"
+        
+        # Handle analysis tasks in GUI mode
+        if gui_mode and mapped_func.config_type == "analyst_function":
+            # For analysis functions, we need to send a signal to the UI
+            from src.signals import global_signals
+            
+            # Prepare the signal payload with function info
+            signal_payload = {
+                "function_name": function_name,
+                "thread_id": thread_id,
+                "tool_call_id": tool_call.id,
+                **function_args  # Include any args that were provided
+            }
+            
+            # Send signal for UI to handle
+            global_signals.analysis_request.emit(signal_payload)
+            
+            # Create placeholder result
+            placeholder_output = json.dumps({
+                "status": "processing",
+                "message": f"Analysis request '{function_name}' is being processed through the UI."
+            })
+            
+            # Add to tool outputs queue
+            tool_outputs_queue.append({
+                "tool_call_id": tool_call.id,
+                "output": placeholder_output
+            })
+            
+            return placeholder_output, "Processing through UI"
+        
+        # For direct execution, the function should handle its own arguments
+        result = mapped_func.function(**function_args)
+        
+        # Format the result for output
+        if isinstance(result, tuple) and len(result) == 2:
+            response, context = result
+            output = json.dumps(response) if isinstance(response, dict) else str(response)
+        else:
+            output = json.dumps(result) if isinstance(result, dict) else str(result)
+            context = None
+        
+        # Add to tool outputs queue
+        tool_outputs_queue.append({
+            "tool_call_id": tool_call.id,
+            "output": output
+        })
+        
+        return output, context
+        
+    except Exception as e:
+        logger.error(f"Error executing function {tool_call.function.name}: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # Create error response
+        error_output = json.dumps({"error": str(e)})
+        
+        # Add to tool outputs queue
+        tool_outputs_queue.append({
+            "tool_call_id": tool_call.id,
+            "output": error_output
+        })
+        
+        return error_output, "Error occurred"
 
 def read_test_prompt():
     """
@@ -534,8 +647,9 @@ def get_last_assistant_message(client, thread_id):
     for message in message_response.data:
         if message.role == "assistant":
             last_message = message.content[0].text.value if message.content else ""
+            #annotation = message.content[0].text.annotations if message.content else ""
     
-    return last_message
+    return last_message #annotation
 
 def process_formulate_question_agent_run(thread_id, run_id):
     """
