@@ -28,7 +28,8 @@ from src.openai_assistant import (
     start_run,
     poll_run_status_and_submit_outputs,
     ClientConfig,
-    pretty_print
+    pretty_print,
+    send_assistant_message
 )
 from src.vector_store_panel import VectorStorePanel
 from src.workflow_manager import WorkflowManager
@@ -499,9 +500,18 @@ class ChatTab(QWidget):
         # Connect to global signals
         global_signals.analysis_request.connect(self._handle_analysis_request)
         global_signals.set_assistant_signal.connect(self.set_assistant)
+        global_signals.set_chat_mode_signal.connect(self.set_chat_mode)
+        global_signals.set_chat_completion_config_signal.connect(self.set_chat_completion_config)
         
         # Initialize with the lead assistant
         self.current_assistant_id = ClientConfig.LEAD_ASSISTANT_ID
+        
+        # Chat mode (assistant or completion)
+        self.chat_mode = "assistant"
+        
+        # Initialize chat history for chat completion mode
+        self.chat_history = None
+        self.current_completion_config = None
         
         # Start initialization thread
         threading.Thread(target=self._initialize_chat, daemon=True).start()
@@ -514,14 +524,11 @@ class ChatTab(QWidget):
                 from src.assistant_config import LeadAssistantConfig
                 lead_assistant_config = LeadAssistantConfig()
                 ClientConfig.LEAD_ASSISTANT_ID = lead_assistant_config.LEAD_ASSISTANT_ID
-                
-                # Use the lead assistant ID as the default assistant
-                ClientConfig.BENDER = ClientConfig.LEAD_ASSISTANT_ID
             
             # Check configuration - only validates API keys now
             ClientConfig.validate_config()
             
-            # Initialize chat thread
+            # Initialize chat thread for assistant mode
             self.chat_thread = initialize_chat()
             if not self.chat_thread or not hasattr(self.chat_thread, "id"):
                 self.signal_handler.message_signal.emit(
@@ -529,9 +536,28 @@ class ChatTab(QWidget):
                 )
                 return
             
+            # Initialize chat history for completion mode
+            try:
+                from src.chat_completion import ChatHistory
+                from src.chat_completion_config import chat_completion_config
+                self.chat_history = ChatHistory()
+                
+                # Add system message from current config
+                config = chat_completion_config.get_config()
+                self.current_completion_config = config
+                if config and "system_message" in config:
+                    self.chat_history.add_message("system", config["system_message"])
+            except ImportError:
+                self.signal_handler.message_signal.emit(
+                    "system", "Warning: Chat completion mode not available.", None
+                )
+            
             # Add welcome message
             welcome_msg = """
             Hello, I pass butter. 
+            
+            I'm in Assistant API mode by default, but you can switch to Chat Completion API mode 
+            through the Chat Completion panel.
             """
             self.signal_handler.message_signal.emit("assistant", welcome_msg, None)
             
@@ -579,7 +605,15 @@ class ChatTab(QWidget):
         if message_text.startswith("/analyze"):
             self._handle_analysis_command(message_text)
             return
-            
+        
+        # Use different processing based on chat mode
+        if self.chat_mode == "assistant":
+            self._process_assistant_message(message_text)
+        else:  # chat_mode == "completion"
+            self._process_completion_message(message_text)
+    
+    def _process_assistant_message(self, message_text):
+        """Process message using the Assistant API"""
         try:
             if not self.chat_thread:
                 self.signal_handler.message_signal.emit(
@@ -587,10 +621,14 @@ class ChatTab(QWidget):
                 )
                 return
             
-            # CRITICAL FIX: Send the user message to the thread before starting the run
+            # Send the user message to the thread before starting the run
             send_user_message(self.chat_thread.id, message_text)
             
-            # Modified start_run call to use the current assistant ID
+            # If we also have chat history initialized, mirror the message there
+            if self.chat_history:
+                self.chat_history.add_message("user", message_text)
+            
+            # Start run with the current assistant ID
             run = start_run(self.chat_thread.id, self.current_assistant_id)
             
             # Add thinking message
@@ -602,6 +640,10 @@ class ChatTab(QWidget):
             last_message, text_content, formatted_content = poll_run_status_and_submit_outputs(
                 self.chat_thread.id, run.id
             )
+            
+            # Mirror the assistant response to chat history
+            if self.chat_history:
+                self.chat_history.add_message("assistant", text_content)
             
             # Update UI with response - remove thinking message and add response
             self.signal_handler.message_signal.emit(
@@ -619,6 +661,188 @@ class ChatTab(QWidget):
             # Re-enable input
             self.signal_handler.enable_input_signal.emit()
     
+    def _process_completion_message(self, message_text):
+        """Process message using the Chat Completion API"""
+        try:
+            # Attempt to initialize chat history if it's missing
+            if not self.chat_history:
+                try:
+                    from src.chat_completion import ChatHistory
+                    from src.chat_completion_config import chat_completion_config
+                    
+                    self.chat_history = ChatHistory()
+                    
+                    # Get default config if not already set
+                    if not self.current_completion_config:
+                        self.current_completion_config = chat_completion_config.get_config()
+                        
+                    # Add system message from current config
+                    if self.current_completion_config and "system_message" in self.current_completion_config:
+                        self.chat_history.add_message("system", self.current_completion_config["system_message"])
+                    
+                    self.signal_handler.message_signal.emit(
+                        "system", "Chat history initialized for completion mode.", None
+                    )
+                except Exception as e:
+                    self.signal_handler.message_signal.emit(
+                        "system", f"Error: Could not initialize chat history. {str(e)}", None
+                    )
+                    self.signal_handler.enable_input_signal.emit()
+                    return
+            
+            # Add message to chat history
+            self.chat_history.add_message("user", message_text)
+            
+            # Mirror message to assistant thread if available
+            if self.chat_thread:
+                send_user_message(self.chat_thread.id, message_text)
+            
+            # Add thinking message
+            self.signal_handler.message_signal.emit(
+                "system", "Assistant is thinking...", None
+            )
+            
+            # Get completion from API
+            from src.chat_completion import create_chat_completion
+            messages = self.chat_history.get_messages_for_completion()
+            
+            # Convert Message objects to dicts for API call
+            message_dicts = [msg.to_dict() for msg in messages]
+            
+            # Get the current chat completion config
+            config = self.current_completion_config
+            
+            # Make the API call
+            completion_text = create_chat_completion(message_dicts, config)
+            
+            # Add the response to chat history
+            self.chat_history.add_message("assistant", completion_text)
+            
+            # Mirror to assistant thread if available
+            if self.chat_thread:
+                send_assistant_message(self.chat_thread.id, completion_text)
+            
+            # Update UI with response - remove thinking message and add response
+            self.signal_handler.message_signal.emit(
+                "remove_thinking", "", None
+            )
+            self.signal_handler.message_signal.emit(
+                "assistant", completion_text, None
+            )
+            
+        except Exception as e:
+            self.signal_handler.message_signal.emit(
+                "system", f"Error: {str(e)}", None
+            )
+            import traceback
+            self.signal_handler.message_signal.emit(
+                "system", f"Traceback: {traceback.format_exc()}", None
+            )
+        finally:
+            # Re-enable input
+            self.signal_handler.enable_input_signal.emit()
+            
+    def set_chat_mode(self, mode):
+        """Set the chat mode (assistant or completion)"""
+        if mode not in ["assistant", "completion"]:
+            self.signal_handler.message_signal.emit(
+                "system", f"Error: Invalid chat mode: {mode}", None
+            )
+            return
+        
+        # Only switch if different
+        if self.chat_mode != mode:
+            old_mode = self.chat_mode
+            self.chat_mode = mode
+            
+            # Notify the user about the mode change
+            self.signal_handler.message_signal.emit(
+                "system", f"Switched from {old_mode.title()} API mode to {mode.title()} API mode.", None
+            )
+            
+            # If switching to completion mode, ensure we have history
+            if mode == "completion":
+                try:
+                    # Import required modules
+                    from src.chat_completion import ChatHistory
+                    from src.chat_completion_config import chat_completion_config
+                    
+                    # Create chat history if it doesn't exist
+                    if not self.chat_history:
+                        self.chat_history = ChatHistory()
+                        
+                        # Get default config if not already set
+                        if not self.current_completion_config:
+                            self.current_completion_config = chat_completion_config.get_config()
+                            
+                        # Add system message from current config
+                        if self.current_completion_config and "system_message" in self.current_completion_config:
+                            self.chat_history.add_message("system", self.current_completion_config["system_message"])
+                        
+                        # Log success
+                        self.signal_handler.message_signal.emit(
+                            "system", "Chat history initialized for completion mode.", None
+                        )
+                    
+                    # Import all previous messages from the thread if available (optional future enhancement)
+                    # if self.chat_thread:
+                    #     # This would require additional implementation to import history
+                    #     pass
+                        
+                except Exception as e:
+                    import traceback
+                    self.signal_handler.message_signal.emit(
+                        "system", f"Error initializing chat completion mode: {str(e)}", None
+                    )
+                    self.signal_handler.message_signal.emit(
+                        "system", f"Traceback: {traceback.format_exc()}", None
+                    )
+                    self.chat_mode = "assistant"  # Revert back
+    
+    def set_chat_completion_config(self, config_name):
+        """Set the active chat completion configuration"""
+        try:
+            from src.chat_completion_config import chat_completion_config
+            from src.chat_completion import ChatHistory
+            
+            # Get the config
+            config = chat_completion_config.get_config(config_name)
+            if not config:
+                self.signal_handler.message_signal.emit(
+                    "system", f"Error: Configuration not found: {config_name}", None
+                )
+                return
+            
+            # Update our current config
+            self.current_completion_config = config
+            
+            # Initialize chat history if not already initialized
+            if not self.chat_history and self.chat_mode == "completion":
+                self.chat_history = ChatHistory()
+                self.signal_handler.message_signal.emit(
+                    "system", "Chat history initialized for completion mode.", None
+                )
+            
+            # If we have chat history, update the system message
+            if self.chat_history and "system_message" in config:
+                # Replace system message
+                self.chat_history.system_message = None
+                self.chat_history.add_message("system", config["system_message"])
+            
+            # Notify the user
+            self.signal_handler.message_signal.emit(
+                "system", f"Switched to chat completion configuration: {config.get('name', config_name)}", None
+            )
+            
+        except Exception as e:
+            import traceback
+            self.signal_handler.message_signal.emit(
+                "system", f"Error setting chat completion configuration: {str(e)}", None
+            )
+            self.signal_handler.message_signal.emit(
+                "system", f"Traceback: {traceback.format_exc()}", None
+            )
+
     def _handle_analysis_command(self, command):
         """Handle analysis command"""
         # Extract prompt from command
@@ -701,11 +925,29 @@ class ChatTab(QWidget):
         )
     
     def _on_workflow_result(self, result, context):
-        """Handle workflow results"""
+        """Handle workflow result"""
         self.signal_handler.message_signal.emit(
-            "assistant", f"Analysis Results:\n\n{result}", None
+            "system", "Analysis complete", None
         )
-        self._enable_input()
+        
+        # Add the analysis result to the chat display
+        self.signal_handler.message_signal.emit(
+            "assistant", result, None
+        )
+        
+        # Add the analysis result to the thread as an assistant message
+        # This ensures the analysis result becomes part of the conversation history
+        if self.chat_thread and hasattr(self.chat_thread, "id"):
+            try:
+                # Add the result to the thread as an assistant message
+                send_assistant_message(self.chat_thread.id, result)
+                
+                print("Analysis result added to chat thread history")
+            except Exception as e:
+                print(f"Error adding analysis result to thread: {str(e)}")
+        
+        # Re-enable input
+        self.signal_handler.enable_input_signal.emit()
     
     def _on_workflow_error(self, error_message):
         """Handle workflow errors"""
@@ -879,9 +1121,64 @@ class ChatTab(QWidget):
 
     def _handle_analysis_result(self, result, context, signal_payload):
         """Handle analysis result and optionally send back to the assistant"""
-        # TODO: If we want to send the result back to the assistant,
-        # we would need to submit the result using the thread_id and tool_call_id
-        pass
+        # If we have all required parameters for a tool call submission
+        if (signal_payload and 'thread_id' in signal_payload and 
+            'tool_call_id' in signal_payload and 'run_id' in signal_payload):
+            try:
+                from src.openai_assistant import OpenAI, ClientConfig
+                client = OpenAI(api_key=ClientConfig.OPENAI_API_KEY)
+                
+                # Submit the result to complete the tool call
+                client.beta.threads.runs.submit_tool_outputs(
+                    thread_id=signal_payload['thread_id'],
+                    run_id=signal_payload['run_id'],
+                    tool_outputs=[
+                        {
+                            "tool_call_id": signal_payload['tool_call_id'],
+                            "output": result
+                        }
+                    ]
+                )
+                
+                # Log success
+                self.signal_handler.message_signal.emit(
+                    "system", "Analysis result submitted to assistant", None
+                )
+                
+            except Exception as e:
+                # Log error
+                self.signal_handler.message_signal.emit(
+                    "system", f"Error submitting analysis result: {str(e)}", None
+                )
+                
+                # Fall back to adding the result as a regular assistant message
+                self._add_result_as_assistant_message(result)
+        else:
+            # Missing required parameters for tool submission
+            if signal_payload and ('thread_id' not in signal_payload or 
+                                 'tool_call_id' not in signal_payload or 
+                                 'run_id' not in signal_payload):
+                missing = []
+                if 'thread_id' not in signal_payload:
+                    missing.append('thread_id')
+                if 'tool_call_id' not in signal_payload:
+                    missing.append('tool_call_id')
+                if 'run_id' not in signal_payload:
+                    missing.append('run_id')
+                print(f"Cannot complete tool call - missing required parameters: {', '.join(missing)}")
+            
+            # Add the result to the thread as an assistant message
+            self._add_result_as_assistant_message(result)
+    
+    def _add_result_as_assistant_message(self, result):
+        """Helper method to add an analysis result as an assistant message to the thread"""
+        if self.chat_thread and hasattr(self.chat_thread, "id"):
+            try:
+                # Add the result to the thread as an assistant message
+                send_assistant_message(self.chat_thread.id, result)
+                print("Analysis result added to thread as assistant message")
+            except Exception as e:
+                print(f"Error adding analysis result to thread: {str(e)}")
 
     def _check_env_file(self):
         """Debug helper to check contents of .env file"""
@@ -1129,7 +1426,7 @@ class ChatBotApp(QMainWindow):
         super().__init__()
         
         # Set up window
-        self.setWindowTitle("Solstice")
+        self.setWindowTitle("AIWorkbench")
         self.resize(1200, 800)
         
         # Ensure the window uses the application icon
@@ -1203,15 +1500,15 @@ def main():
         try:
             import ctypes
             # Set app ID so Windows properly associates icon with the application in taskbar
-            app_id = "Solstice.ChatApplication.1.0"
+            app_id = "AIWorkbench.1.0"
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
             print(f"Set Windows AppUserModelID to: {app_id}")
         except Exception as e:
             print(f"Failed to set application ID: {e}")
     
     app = QApplication(sys.argv)
-    app.setApplicationName("Solstice")
-    app.setApplicationDisplayName("Solstice")
+    app.setApplicationName("AIWorkbench")
+    app.setApplicationDisplayName("AIWorkbench")
     VSCodeStyleHelper.apply_styles(app)
     
     # Get absolute path to the current file's directory

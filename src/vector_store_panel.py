@@ -15,14 +15,14 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QSplitter, QFileDialog, QMessageBox,
     QComboBox, QLineEdit, QFormLayout, QGroupBox, QProgressBar, QTabWidget,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QCheckBox,
-    QApplication
+    QApplication, QDialog, QRadioButton, QScrollArea, QWidget, QProgressDialog
 )
 from PyQt5.QtCore import Qt, QSize, pyqtSignal, QObject, QThread, QTimer
 from PyQt5.QtGui import QIcon, QFont, QColor
 
-# Import the OpenAI storage manager
+# Import the OpenAI resource manager
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from openai_storage_tool import OpenAIStorageManager
+from src.openai_resource_manager import OpenAIResourceManager as OpenAIStorageManager
 
 class WorkerSignals(QObject):
     """Signals for worker thread communication"""
@@ -55,10 +55,35 @@ class VectorStorePanel(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.storage_manager = OpenAIStorageManager()
-        self.active_workers = []  # Keep track of active worker threads
-        self.init_ui()
         
+        # Initialize signals for thread communication
+        self.signals = WorkerSignals()
+        
+        try:
+            self.storage_manager = OpenAIStorageManager()
+            self.signals.error.connect(self._show_error)
+            self.active_workers = []  # Keep track of active worker threads
+            self.init_ui()
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Initialization Error",
+                f"Failed to initialize the OpenAI storage manager: {str(e)}\n\n"
+                f"Please check your OpenAI API key and connectivity."
+            )
+            # Set up a minimal UI for error state
+            layout = QVBoxLayout(self)
+            error_label = QLabel(
+                "Vector Store panel is not available. Please check your API key and configuration."
+            )
+            error_label.setWordWrap(True)
+            error_label.setStyleSheet("color: red;")
+            layout.addWidget(error_label)
+            
+            retry_button = QPushButton("Retry Connection")
+            retry_button.clicked.connect(self._retry_initialization)
+            layout.addWidget(retry_button)
+    
     def __del__(self):
         """Destructor to clean up threads"""
         self._cleanup_threads()
@@ -116,6 +141,36 @@ class VectorStorePanel(QWidget):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         
+        # Add search and filter section
+        search_filter_layout = QHBoxLayout()
+        
+        # Search field
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(QLabel("Search:"))
+        self.vs_search_field = QLineEdit()
+        self.vs_search_field.setPlaceholderText("Search by name or ID...")
+        self.vs_search_field.textChanged.connect(self._filter_vector_stores)
+        search_layout.addWidget(self.vs_search_field)
+        search_filter_layout.addLayout(search_layout)
+        
+        # Date filter
+        date_filter_layout = QHBoxLayout()
+        date_filter_layout.addWidget(QLabel("Date:"))
+        
+        # Date range options
+        self.date_filter = QComboBox()
+        self.date_filter.addItem("All Time")
+        self.date_filter.addItem("Today")
+        self.date_filter.addItem("Last 7 Days")
+        self.date_filter.addItem("Last 30 Days")
+        self.date_filter.addItem("Last 90 Days")
+        self.date_filter.currentIndexChanged.connect(self._filter_vector_stores)
+        
+        date_filter_layout.addWidget(self.date_filter)
+        search_filter_layout.addLayout(date_filter_layout)
+        
+        layout.addLayout(search_filter_layout)
+        
         # Vector Store operations panel
         operations_layout = QHBoxLayout()
         self.refresh_vs_btn = QPushButton("Refresh")
@@ -158,10 +213,22 @@ class VectorStorePanel(QWidget):
         files_group = QGroupBox("Files in Vector Store")
         files_layout = QVBoxLayout(files_group)
         
+        # Add files search field
+        files_search_layout = QHBoxLayout()
+        files_search_layout.addWidget(QLabel("Search Files:"))
+        self.vs_files_search = QLineEdit()
+        self.vs_files_search.setPlaceholderText("Search by file ID or name...")
+        self.vs_files_search.textChanged.connect(self._filter_vector_store_files)
+        files_search_layout.addWidget(self.vs_files_search)
+        files_layout.addLayout(files_search_layout)
+        
+        # Files table
         self.vs_files_table = QTableWidget()
-        self.vs_files_table.setColumnCount(3)
-        self.vs_files_table.setHorizontalHeaderLabels(["ID", "Created", "Status"])
+        self.vs_files_table.setColumnCount(4)
+        self.vs_files_table.setHorizontalHeaderLabels(["ID", "Created", "Status", "Filename"])
         self.vs_files_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.vs_files_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.vs_files_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         
         files_layout.addWidget(self.vs_files_table)
         
@@ -171,9 +238,12 @@ class VectorStorePanel(QWidget):
         self.add_files_btn.clicked.connect(self.add_files_to_vector_store)
         self.refresh_files_btn = QPushButton("Refresh Files")
         self.refresh_files_btn.clicked.connect(self.refresh_vector_store_files)
+        self.remove_files_btn = QPushButton("Remove Selected")
+        self.remove_files_btn.clicked.connect(self.remove_selected_files)
         
         add_files_layout.addWidget(self.add_files_btn)
         add_files_layout.addWidget(self.refresh_files_btn)
+        add_files_layout.addWidget(self.remove_files_btn)
         files_layout.addLayout(add_files_layout)
         
         # Add widgets to splitter
@@ -189,6 +259,49 @@ class VectorStorePanel(QWidget):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         
+        # Search and filter section
+        search_filter_layout = QHBoxLayout()
+        
+        # Search field
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(QLabel("Search:"))
+        self.file_search_field = QLineEdit()
+        self.file_search_field.setPlaceholderText("Search by filename or ID...")
+        self.file_search_field.textChanged.connect(self._filter_files)
+        search_layout.addWidget(self.file_search_field)
+        search_filter_layout.addLayout(search_layout)
+        
+        # Purpose filter
+        purpose_layout = QHBoxLayout()
+        purpose_layout.addWidget(QLabel("Purpose:"))
+        self.purpose_filter = QComboBox()
+        self.purpose_filter.addItem("All Purposes")
+        self.purpose_filter.addItem("assistants")
+        self.purpose_filter.addItem("vision")
+        self.purpose_filter.addItem("fine-tune")
+        self.purpose_filter.addItem("batch")
+        self.purpose_filter.currentTextChanged.connect(self.refresh_files)
+        purpose_layout.addWidget(self.purpose_filter)
+        search_filter_layout.addLayout(purpose_layout)
+        
+        # Date filter
+        date_filter_layout = QHBoxLayout()
+        date_filter_layout.addWidget(QLabel("Date:"))
+        
+        # Date range options
+        self.file_date_filter = QComboBox()
+        self.file_date_filter.addItem("All Time")
+        self.file_date_filter.addItem("Today")
+        self.file_date_filter.addItem("Last 7 Days")
+        self.file_date_filter.addItem("Last 30 Days")
+        self.file_date_filter.addItem("Last 90 Days")
+        self.file_date_filter.currentIndexChanged.connect(self._filter_files)
+        
+        date_filter_layout.addWidget(self.file_date_filter)
+        search_filter_layout.addLayout(date_filter_layout)
+        
+        layout.addLayout(search_filter_layout)
+        
         # File operations panel
         operations_layout = QHBoxLayout()
         self.refresh_files_list_btn = QPushButton("Refresh")
@@ -198,17 +311,6 @@ class VectorStorePanel(QWidget):
         self.download_file_btn = QPushButton("Download")
         self.download_file_btn.clicked.connect(self.download_selected_file)
         
-        # Purpose filter
-        self.purpose_filter = QComboBox()
-        self.purpose_filter.addItem("All Purposes")
-        self.purpose_filter.addItem("assistants")
-        self.purpose_filter.addItem("vision")
-        self.purpose_filter.addItem("fine-tune")
-        self.purpose_filter.addItem("batch")
-        self.purpose_filter.currentTextChanged.connect(self.refresh_files)
-        
-        operations_layout.addWidget(QLabel("Purpose:"))
-        operations_layout.addWidget(self.purpose_filter)
         operations_layout.addWidget(self.refresh_files_list_btn)
         operations_layout.addWidget(self.download_file_btn)
         operations_layout.addWidget(self.delete_file_btn)
@@ -221,7 +323,7 @@ class VectorStorePanel(QWidget):
         self.files_table.setHorizontalHeaderLabels(["ID", "Filename", "Purpose", "Size", "Created"])
         self.files_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.files_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.files_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.files_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.files_table.itemSelectionChanged.connect(self.on_file_selected)
         
         # File details
@@ -372,10 +474,28 @@ class VectorStorePanel(QWidget):
         if not selected_items:
             return
         
-        store_data = selected_items[0].data(Qt.UserRole)
-        if not store_data:
+        # Get the vector store ID from the selected item
+        store_item = None
+        for item in selected_items:
+            if item.column() == 0:  # ID column
+                store_item = item
+                break
+        
+        if not store_item:
             return
         
+        store_data = store_item.data(Qt.UserRole)
+        if not store_data or not store_data.get('id'):
+            return
+        
+        # Show a loading indicator
+        self.vs_files_table.setRowCount(1)
+        self.vs_files_table.setItem(0, 0, QTableWidgetItem("Loading..."))
+        self.vs_files_table.setItem(0, 1, QTableWidgetItem(""))
+        self.vs_files_table.setItem(0, 2, QTableWidgetItem(""))
+        self.vs_files_table.setItem(0, 3, QTableWidgetItem(""))
+        
+        # Create a worker to fetch the files
         worker = self._create_worker(self.storage_manager.list_vector_store_files, store_data['id'])
         worker.signals.result.connect(self._on_vector_store_files_loaded)
         worker.signals.error.connect(self._show_error)
@@ -385,21 +505,40 @@ class VectorStorePanel(QWidget):
         """Handle loaded vector store files data"""
         self.vs_files_table.setRowCount(0)
         
-        if not files_data or "data" not in files_data:
+        if not files_data or not hasattr(files_data, 'data') or not files_data.data:
             return
         
-        self.vs_files_table.setRowCount(len(files_data["data"]))
-        for row, file in enumerate(files_data["data"]):
+        # Set up table for multi-selection
+        self.vs_files_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.vs_files_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        
+        # Update column headers
+        self.vs_files_table.setColumnCount(4)
+        self.vs_files_table.setHorizontalHeaderLabels(["ID", "Created", "Status", "Filename"])
+        
+        # Add the files to the table
+        self.vs_files_table.setRowCount(len(files_data.data))
+        for row, file in enumerate(files_data.data):
             # ID
-            self.vs_files_table.setItem(row, 0, QTableWidgetItem(file.get('id', '')))
+            id_item = QTableWidgetItem(file.id)
+            id_item.setData(Qt.UserRole, file)
+            self.vs_files_table.setItem(row, 0, id_item)
             
             # Created
-            created_time = datetime.fromtimestamp(file.get('created_at', 0))
+            created_time = datetime.fromtimestamp(file.created_at)
             created_str = created_time.strftime("%Y-%m-%d %H:%M:%S")
             self.vs_files_table.setItem(row, 1, QTableWidgetItem(created_str))
             
             # Status
-            self.vs_files_table.setItem(row, 2, QTableWidgetItem(file.get('status', '')))
+            status = getattr(file, 'status', 'unknown')
+            self.vs_files_table.setItem(row, 2, QTableWidgetItem(status))
+            
+            # Filename - if available
+            filename = getattr(file, 'filename', '')
+            self.vs_files_table.setItem(row, 3, QTableWidgetItem(filename))
+        
+        # Resize columns to fit content
+        self.vs_files_table.resizeColumnsToContents()
     
     def show_create_vector_store_dialog(self):
         """Show dialog to create a new vector store"""
@@ -558,13 +697,287 @@ class VectorStorePanel(QWidget):
             QMessageBox.warning(self, "Error", "Please select a vector store first.")
             return
         
-        store_data = selected_items[0].data(Qt.UserRole)
-        if not store_data:
+        # Get the vector store ID from the selected item
+        store_item = None
+        for item in selected_items:
+            if item.column() == 0:  # ID column
+                store_item = item
+                break
+            
+        if not store_item:
+            QMessageBox.warning(self, "Error", "Please select a valid vector store.")
             return
         
-        # Show file selection dialog
-        # This is not fully implemented yet - need to modify the API to add files to existing vector store
-        QMessageBox.information(self, "Info", "This feature is coming soon.")
+        store_data = store_item.data(Qt.UserRole)
+        if not store_data or not store_data.get('id'):
+            QMessageBox.warning(self, "Error", "Invalid vector store selection.")
+            return
+        
+        vector_store_id = store_data['id']
+        
+        # Create dialog to choose between local files and OpenAI files
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add Files to Vector Store")
+        dialog.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Options
+        local_files_radio = QRadioButton("Upload Local Files")
+        openai_files_radio = QRadioButton("Select from OpenAI Files")
+        local_files_radio.setChecked(True)
+        
+        layout.addWidget(QLabel("Choose file source:"))
+        layout.addWidget(local_files_radio)
+        layout.addWidget(openai_files_radio)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        cancel_btn = QPushButton("Cancel")
+        continue_btn = QPushButton("Continue")
+        continue_btn.setDefault(True)
+        
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(continue_btn)
+        
+        layout.addLayout(button_layout)
+        
+        # Connect buttons
+        cancel_btn.clicked.connect(dialog.reject)
+        continue_btn.clicked.connect(dialog.accept)
+        
+        # Show dialog
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        
+        # Handle the selected option
+        if local_files_radio.isChecked():
+            self._add_local_files_to_vector_store(vector_store_id)
+        else:
+            self._add_openai_files_to_vector_store(vector_store_id)
+
+    def _add_local_files_to_vector_store(self, vector_store_id):
+        """Add local files to a vector store"""
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Select Files to Add",
+            "",
+            "All Files (*.*)"
+        )
+        
+        if not file_paths:
+            return
+        
+        # Show progress dialog
+        progress = QProgressDialog("Uploading files to vector store...", "Cancel", 0, len(file_paths), self)
+        progress.setWindowTitle("Uploading Files")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.show()
+        
+        # Create a worker to upload the files
+        def upload_files():
+            results = []
+            for i, file_path in enumerate(file_paths):
+                try:
+                    # First upload the file to OpenAI
+                    with open(file_path, "rb") as file:
+                        upload_response = self.storage_manager.client.files.create(
+                            file=file,
+                            purpose="assistants"
+                        )
+                        
+                    # Wait for the file to process
+                    file_id = upload_response.id
+                    
+                    # Now attach the file to the vector store
+                    response = self.storage_manager.client.beta.vector_stores.files.create(
+                        vector_store_id=vector_store_id,
+                        file_id=file_id
+                    )
+                    
+                    results.append(response)
+                    progress.setValue(i + 1)
+                    
+                    if progress.wasCanceled():
+                        break
+                        
+                except Exception as e:
+                    self.signals.error.emit(str(e))
+                    
+            return results
+        
+        worker = self._create_worker(upload_files)
+        worker.signals.error.connect(self._show_error)
+        worker.signals.finished.connect(progress.close)
+        worker.signals.finished.connect(lambda: self.refresh_vector_store_files())
+        worker.start()
+
+    def _add_openai_files_to_vector_store(self, vector_store_id):
+        """Add existing OpenAI files to a vector store"""
+        # Create a file selection dialog
+        file_dialog = QDialog(self)
+        file_dialog.setWindowTitle("Select Files to Add")
+        file_dialog.setMinimumWidth(600)
+        file_dialog.setMinimumHeight(400)
+        
+        layout = QVBoxLayout(file_dialog)
+        
+        # Search field
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(QLabel("Search:"))
+        search_field = QLineEdit()
+        search_field.setPlaceholderText("Search by filename...")
+        search_layout.addWidget(search_field)
+        layout.addLayout(search_layout)
+        
+        # Create scroll area for checkboxes
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        checkbox_container = QWidget()
+        checkbox_layout = QVBoxLayout(checkbox_container)
+        scroll_area.setWidget(checkbox_container)
+        layout.addWidget(scroll_area)
+        
+        checkboxes = []  # To store references to checkboxes
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        select_all_btn = QPushButton("Select All")
+        deselect_all_btn = QPushButton("Deselect All")
+        add_btn = QPushButton("Add Selected")
+        cancel_btn = QPushButton("Cancel")
+        
+        button_layout.addWidget(select_all_btn)
+        button_layout.addWidget(deselect_all_btn)
+        button_layout.addWidget(add_btn)
+        button_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(button_layout)
+        
+        # Show a loading progress dialog while fetching files
+        progress = QProgressDialog("Loading files...", "Cancel", 0, 100, self)
+        progress.setWindowTitle("Loading Files")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setValue(0)
+        progress.show()
+        
+        def populate_files(files_data):
+            progress.close()
+            
+            if not files_data or "data" not in files_data or not files_data["data"]:
+                QMessageBox.information(file_dialog, "No Files", "No files found.")
+                file_dialog.reject()
+                return
+                
+            # Clear existing checkboxes
+            for i in reversed(range(checkbox_layout.count())):
+                widget = checkbox_layout.itemAt(i).widget()
+                if widget:
+                    widget.deleteLater()
+                    
+            checkboxes.clear()
+            
+            # Add checkboxes for each file
+            for file in files_data["data"]:
+                filename = file.get("filename", "Unnamed")
+                created = datetime.fromtimestamp(file.get("created_at", 0)).strftime("%Y-%m-%d")
+                purpose = file.get("purpose", "unknown")
+                
+                checkbox = QCheckBox(f"{filename} ({created}) - {purpose}")
+                checkbox.setProperty("file_id", file.get("id"))
+                checkbox_layout.addWidget(checkbox)
+                checkboxes.append(checkbox)
+            
+            # Apply initial filter
+            apply_search_filter("")
+        
+        def apply_search_filter(search_text):
+            search_text = search_text.lower()
+            for checkbox in checkboxes:
+                if search_text and search_text not in checkbox.text().lower():
+                    checkbox.setVisible(False)
+                else:
+                    checkbox.setVisible(True)
+        
+        def select_all():
+            for checkbox in checkboxes:
+                if checkbox.isVisible():
+                    checkbox.setChecked(True)
+        
+        def deselect_all():
+            for checkbox in checkboxes:
+                if checkbox.isVisible():
+                    checkbox.setChecked(False)
+        
+        def add_selected_files():
+            selected_file_ids = []
+            for checkbox in checkboxes:
+                if checkbox.isChecked():
+                    file_id = checkbox.property("file_id")
+                    if file_id:
+                        selected_file_ids.append(file_id)
+            
+            if not selected_file_ids:
+                QMessageBox.warning(file_dialog, "No Selection", "Please select at least one file.")
+                return
+            
+            # Close the dialog and proceed with adding files
+            file_dialog.accept()
+            
+            # Show progress dialog for adding files
+            add_progress = QProgressDialog(
+                "Adding files to vector store...", "Cancel", 0, len(selected_file_ids), self
+            )
+            add_progress.setWindowTitle("Adding Files")
+            add_progress.setWindowModality(Qt.WindowModal)
+            add_progress.show()
+            
+            def add_files_to_store():
+                results = []
+                for i, file_id in enumerate(selected_file_ids):
+                    try:
+                        response = self.storage_manager.client.beta.vector_stores.files.create(
+                            vector_store_id=vector_store_id,
+                            file_id=file_id
+                        )
+                        results.append(response)
+                        add_progress.setValue(i + 1)
+                        
+                        if add_progress.wasCanceled():
+                            break
+                            
+                    except Exception as e:
+                        self.signals.error.emit(str(e))
+                        
+                return results
+            
+            add_worker = self._create_worker(add_files_to_store)
+            add_worker.signals.error.connect(self._show_error)
+            add_worker.signals.finished.connect(add_progress.close)
+            add_worker.signals.finished.connect(lambda: self.refresh_vector_store_files())
+            add_worker.start()
+        
+        # Connect signals
+        search_field.textChanged.connect(apply_search_filter)
+        select_all_btn.clicked.connect(select_all)
+        deselect_all_btn.clicked.connect(deselect_all)
+        add_btn.clicked.connect(add_selected_files)
+        cancel_btn.clicked.connect(file_dialog.reject)
+        
+        # Create a worker to fetch files
+        def get_files():
+            purpose = None  # Get all files
+            return self.storage_manager.list_files(purpose)
+        
+        worker = self._create_worker(get_files)
+        
+        # Connect worker signals
+        worker.signals.result.connect(populate_files)
+        worker.signals.error.connect(lambda e: (progress.close(), self._show_error(e)))
+        worker.start()
+        
+        # Show dialog (will block until accepted or rejected)
+        file_dialog.exec_()
     
     def refresh_files(self):
         """Refresh the list of files"""
@@ -614,37 +1027,79 @@ class VectorStorePanel(QWidget):
             self.file_details.clear()
             return
         
+        # If multiple items selected, show count in the details panel
+        if len(set(item.row() for item in selected_items)) > 1:
+            selection_count = len(set(item.row() for item in selected_items))
+            self.file_details.setText(f"{selection_count} files selected")
+            return
+        
+        # Otherwise, show details for the single selected file
         file_data = selected_items[0].data(Qt.UserRole)
         if not file_data:
             return
         
         # Display details
-        details_text = f"ID: {file_data['id']}\n"
-        details_text += f"Filename: {file_data['filename']}\n"
-        details_text += f"Purpose: {file_data['purpose']}\n"
-        details_text += f"Size: {file_data['bytes']:,} bytes\n"
-        details_text += f"Created: {datetime.fromtimestamp(file_data['created_at']).strftime('%Y-%m-%d %H:%M:%S')}\n"
-        if file_data.get('status'):
-            details_text += f"Status: {file_data['status']}\n"
+        details_text = f"ID: {file_data.get('id', '')}\n"
+        details_text += f"Filename: {file_data.get('filename', '')}\n"
+        details_text += f"Purpose: {file_data.get('purpose', '')}\n"
+        
+        # Format size
+        file_size = file_data.get('bytes', 0)
+        if file_size < 1024:
+            size_str = f"{file_size} bytes"
+        elif file_size < 1024 * 1024:
+            size_str = f"{file_size / 1024:.2f} KB"
+        else:
+            size_str = f"{file_size / (1024 * 1024):.2f} MB"
+        
+        details_text += f"Size: {size_str}\n"
+        
+        created_time = datetime.fromtimestamp(file_data.get('created_at', 0))
+        details_text += f"Created: {created_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        
+        if 'status' in file_data:
+            details_text += f"Status: {file_data.get('status', '')}\n"
         
         self.file_details.setText(details_text)
     
     def delete_selected_file(self):
-        """Delete the selected file"""
+        """Delete the selected file(s)"""
         selected_items = self.files_table.selectedItems()
         if not selected_items:
-            QMessageBox.warning(self, "Error", "Please select a file to delete.")
+            QMessageBox.warning(self, "Error", "Please select at least one file to delete.")
             return
         
-        file_data = selected_items[0].data(Qt.UserRole)
-        if not file_data:
+        # Get unique rows
+        selected_rows = set(item.row() for item in selected_items)
+        
+        # Collect file IDs to delete
+        file_ids = []
+        filenames = []
+        for row in selected_rows:
+            id_item = self.files_table.item(row, 0)
+            if not id_item:
+                continue
+            
+            file_data = id_item.data(Qt.UserRole)
+            if not file_data:
+                continue
+            
+            file_ids.append(file_data.get('id'))
+            filenames.append(file_data.get('filename', f"File {file_data.get('id')[:8]}..."))
+        
+        if not file_ids:
+            QMessageBox.warning(self, "Error", "No valid files selected for deletion.")
             return
         
-        # Confirm deletion
+        # Confirmation message
+        files_str = "\n".join(filenames[:10])
+        if len(filenames) > 10:
+            files_str += f"\n... and {len(filenames) - 10} more"
+        
         confirm = QMessageBox.question(
-            self, 
+            self,
             "Confirm Deletion",
-            f"Are you sure you want to delete file '{file_data['filename']}'?\nThis operation cannot be undone.",
+            f"Are you sure you want to delete the following {len(file_ids)} file(s)?\n\n{files_str}",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -652,44 +1107,194 @@ class VectorStorePanel(QWidget):
         if confirm != QMessageBox.Yes:
             return
         
-        worker = self._create_worker(self.storage_manager.delete_file, file_data['id'])
-        worker.signals.result.connect(lambda result: (
-            QMessageBox.information(self, "Success", "File deleted successfully."),
-            self.refresh_files()
-        ))
+        # Show progress dialog
+        progress = QProgressDialog(
+            "Deleting files...", "Cancel", 0, len(file_ids), self
+        )
+        progress.setWindowTitle("Deleting Files")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.show()
+        
+        # Delete files in a worker thread
+        def delete_files():
+            results = []
+            for i, file_id in enumerate(file_ids):
+                try:
+                    result = self.storage_manager.delete_file(file_id)
+                    results.append(result)
+                    progress.setValue(i + 1)
+                    
+                    if progress.wasCanceled():
+                        break
+                    
+                except Exception as e:
+                    self.signals.error.emit(str(e))
+                
+            return results
+        
+        worker = self._create_worker(delete_files)
         worker.signals.error.connect(self._show_error)
+        worker.signals.finished.connect(progress.close)
+        worker.signals.finished.connect(lambda: self.refresh_files())
         worker.start()
     
     def download_selected_file(self):
-        """Download the selected file"""
+        """Download the selected file(s)"""
         selected_items = self.files_table.selectedItems()
         if not selected_items:
-            QMessageBox.warning(self, "Error", "Please select a file to download.")
+            QMessageBox.warning(self, "Error", "Please select at least one file to download.")
             return
         
-        file_data = selected_items[0].data(Qt.UserRole)
-        if not file_data:
+        # Get unique rows
+        selected_rows = set(item.row() for item in selected_items)
+        
+        # Collect file data for download
+        file_data_list = []
+        for row in selected_rows:
+            id_item = self.files_table.item(row, 0)
+            if not id_item:
+                continue
+            
+            file_data = id_item.data(Qt.UserRole)
+            if not file_data:
+                continue
+            
+            file_data_list.append(file_data)
+        
+        if not file_data_list:
+            QMessageBox.warning(self, "Error", "No valid files selected for download.")
             return
         
-        # Get save location
-        filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save File",
-            file_data['filename'],
-            "All Files (*.*)"
-        )
+        # If only one file, download directly
+        if len(file_data_list) == 1:
+            file_data = file_data_list[0]
+            # Choose download directory
+            download_dir = QFileDialog.getExistingDirectory(
+                self, "Select Folder for Download", ""
+            )
+            
+            if not download_dir:
+                return
+            
+            # Construct the full path
+            file_path = os.path.join(download_dir, file_data.get('filename', f"file_{file_data.get('id')}.txt"))
+            
+            # Show progress dialog
+            progress = QProgressDialog(
+                f"Downloading {file_data.get('filename')}...", 
+                "Cancel", 0, 100, self
+            )
+            progress.setWindowTitle("Downloading File")
+            progress.setWindowModality(Qt.WindowModal)
+            progress.show()
+            
+            # Create a worker to download the file
+            def download_file():
+                try:
+                    content = self.storage_manager.get_file_content(
+                        file_data.get('id'), output_path=file_path
+                    )
+                    return {"success": True, "path": file_path}
+                except Exception as e:
+                    self.signals.error.emit(str(e))
+                    return {"success": False, "error": str(e)}
+            
+            worker = self._create_worker(download_file)
+            worker.signals.result.connect(lambda result: (
+                progress.close(),
+                QMessageBox.information(
+                    self, 
+                    "Download Complete", 
+                    f"File downloaded successfully to:\n{file_path}" if result.get('success') else f"Error: {result.get('error')}"
+                )
+            ))
+            worker.signals.error.connect(lambda e: (
+                progress.close(),
+                self._show_error(e)
+            ))
+            worker.start()
+        else:
+            # Multiple files - choose download directory
+            download_dir = QFileDialog.getExistingDirectory(
+                self, "Select Folder for Download", ""
+            )
+            
+            if not download_dir:
+                return
+            
+            # Show progress dialog for all files
+            progress = QProgressDialog(
+                f"Downloading {len(file_data_list)} files...", 
+                "Cancel", 0, len(file_data_list), self
+            )
+            progress.setWindowTitle("Downloading Files")
+            progress.setWindowModality(Qt.WindowModal)
+            progress.show()
+            
+            # Create a worker to download all files
+            def download_files():
+                results = []
+                for i, file_data in enumerate(file_data_list):
+                    try:
+                        if progress.wasCanceled():
+                            break
+                        
+                        # Update progress dialog
+                        progress.setValue(i)
+                        progress.setLabelText(f"Downloading {file_data.get('filename')}...")
+                        
+                        # Construct the full path
+                        file_path = os.path.join(download_dir, file_data.get('filename', f"file_{file_data.get('id')}.txt"))
+                        
+                        # Download the file
+                        content = self.storage_manager.get_file_content(
+                            file_data.get('id'), output_path=file_path
+                        )
+                        
+                        results.append({
+                            "success": True,
+                            "path": file_path,
+                            "filename": file_data.get('filename')
+                        })
+                        
+                    except Exception as e:
+                        results.append({
+                            "success": False,
+                            "error": str(e),
+                            "filename": file_data.get('filename')
+                        })
+                        self.signals.error.emit(str(e))
+                
+                return results
+            
+            worker = self._create_worker(download_files)
+            worker.signals.result.connect(lambda results: (
+                progress.close(),
+                self._show_download_summary(results, download_dir)
+            ))
+            worker.signals.error.connect(lambda e: (
+                progress.close(),
+                self._show_error(e)
+            ))
+            worker.start()
+
+    def _show_download_summary(self, results, download_dir):
+        """Show a summary of download results"""
+        success_count = sum(1 for r in results if r.get('success'))
+        failed_count = len(results) - success_count
         
-        if not filename:
-            return
+        message = f"Download summary:\n\n"
+        message += f"Successfully downloaded: {success_count} files\n"
+        if failed_count > 0:
+            message += f"Failed: {failed_count} files\n\n"
+            message += "Failed files:\n"
+            for result in results:
+                if not result.get('success'):
+                    message += f"- {result.get('filename')}: {result.get('error')}\n"
         
-        # Download the file
-        QMessageBox.information(self, "Info", f"Downloading to {filename}...")
+        message += f"\nFiles were saved to:\n{download_dir}"
         
-        # This is a placeholder - need to implement file download in OpenAIStorageManager
-        # worker = Worker(self.storage_manager.get_file_content, file_data['id'], filename)
-        # worker.signals.result.connect(lambda _: QMessageBox.information(self, "Success", "File downloaded successfully."))
-        # worker.signals.error.connect(self._show_error)
-        # worker.start()
+        QMessageBox.information(self, "Download Complete", message)
     
     def browse_file(self):
         """Open file browser dialog"""
@@ -813,4 +1418,241 @@ class VectorStorePanel(QWidget):
             self,
             "Coming Soon",
             "Direct analysis of vector store files will be available in a future update."
-        ) 
+        )
+
+    def _filter_vector_stores(self):
+        """Filter the vector stores list based on search text and date filter"""
+        search_text = self.vs_search_field.text().lower()
+        date_filter = self.date_filter.currentText()
+        
+        # Get the current timestamp for date filtering
+        now = datetime.now().timestamp()
+        one_day = 24 * 60 * 60
+        
+        # Calculate the cutoff time based on the selected filter
+        if date_filter == "Today":
+            cutoff_time = now - one_day
+        elif date_filter == "Last 7 Days":
+            cutoff_time = now - (7 * one_day)
+        elif date_filter == "Last 30 Days":
+            cutoff_time = now - (30 * one_day)
+        elif date_filter == "Last 90 Days":
+            cutoff_time = now - (90 * one_day)
+        else:
+            cutoff_time = 0  # All time
+        
+        # Loop through all rows and apply filters
+        for row in range(self.vs_list.rowCount()):
+            # Get the store data from the ID column item
+            id_item = self.vs_list.item(row, 0)
+            if not id_item:
+                continue
+            
+            store_data = id_item.data(Qt.UserRole)
+            if not store_data:
+                continue
+            
+            # Check if the store matches the search text
+            store_id = store_data.get('id', '').lower()
+            store_name = store_data.get('name', '').lower()
+            
+            matches_search = (not search_text or 
+                             search_text in store_id or 
+                             search_text in store_name)
+            
+            # Check if the store matches the date filter
+            created_at = store_data.get('created_at', 0)
+            matches_date = created_at >= cutoff_time
+            
+            # Show/hide the row based on the filters
+            self.vs_list.setRowHidden(row, not (matches_search and matches_date))
+
+    def _filter_vector_store_files(self):
+        """Filter the vector store files table based on search text"""
+        search_text = self.vs_files_search.text().lower()
+        
+        for row in range(self.vs_files_table.rowCount()):
+            # Get file ID and filename for filtering
+            id_item = self.vs_files_table.item(row, 0)
+            filename_item = self.vs_files_table.item(row, 3)
+            
+            if not id_item:
+                continue
+            
+            file_id = id_item.text().lower()
+            filename = filename_item.text().lower() if filename_item else ""
+            
+            # Show/hide the row based on the search text
+            self.vs_files_table.setRowHidden(
+                row, 
+                search_text and not (search_text in file_id or search_text in filename)
+            )
+
+    def remove_selected_files(self):
+        """Remove selected files from the vector store"""
+        # Get the selected vector store
+        vs_selected_items = self.vs_list.selectedItems()
+        if not vs_selected_items:
+            QMessageBox.warning(self, "Error", "Please select a vector store first.")
+            return
+        
+        # Get the vector store ID from the selected item
+        store_item = None
+        for item in vs_selected_items:
+            if item.column() == 0:  # ID column
+                store_item = item
+                break
+            
+        if not store_item:
+            QMessageBox.warning(self, "Error", "Please select a valid vector store.")
+            return
+        
+        store_data = store_item.data(Qt.UserRole)
+        if not store_data or not store_data.get('id'):
+            QMessageBox.warning(self, "Error", "Invalid vector store selection.")
+            return
+        
+        vector_store_id = store_data['id']
+        
+        # Get selected files
+        selected_ranges = self.vs_files_table.selectedRanges()
+        if not selected_ranges:
+            QMessageBox.warning(self, "Error", "Please select at least one file to remove.")
+            return
+        
+        # Collect all selected rows
+        selected_rows = set()
+        for selection_range in selected_ranges:
+            for row in range(selection_range.topRow(), selection_range.bottomRow() + 1):
+                selected_rows.add(row)
+        
+        if not selected_rows:
+            QMessageBox.warning(self, "Error", "Please select at least one file to remove.")
+            return
+        
+        # Get file IDs to remove
+        file_ids = []
+        for row in selected_rows:
+            id_item = self.vs_files_table.item(row, 0)
+            if id_item:
+                file_ids.append(id_item.text())
+        
+        # Confirm deletion
+        confirm = QMessageBox.question(
+            self, 
+            "Confirm Removal",
+            f"Are you sure you want to remove {len(file_ids)} file(s) from this vector store?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if confirm != QMessageBox.Yes:
+            return
+        
+        # Show progress dialog
+        progress = QProgressDialog(
+            "Removing files from vector store...", "Cancel", 0, len(file_ids), self
+        )
+        progress.setWindowTitle("Removing Files")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.show()
+        
+        # Create a worker to remove the files
+        def remove_files():
+            results = []
+            for i, file_id in enumerate(file_ids):
+                try:
+                    response = self.storage_manager.client.beta.vector_stores.files.delete(
+                        vector_store_id=vector_store_id,
+                        file_id=file_id
+                    )
+                    results.append(response)
+                    progress.setValue(i + 1)
+                    
+                    if progress.wasCanceled():
+                        break
+                    
+                except Exception as e:
+                    self.signals.error.emit(str(e))
+                
+            return results
+        
+        worker = self._create_worker(remove_files)
+        worker.signals.error.connect(self._show_error)
+        worker.signals.finished.connect(progress.close)
+        worker.signals.finished.connect(lambda: self.refresh_vector_store_files())
+        worker.start()
+
+    def _filter_files(self):
+        """Filter the files table based on search text and date filter"""
+        search_text = self.file_search_field.text().lower()
+        date_filter = self.file_date_filter.currentText()
+        
+        # Get the current timestamp for date filtering
+        now = datetime.now().timestamp()
+        one_day = 24 * 60 * 60
+        
+        # Calculate the cutoff time based on the selected filter
+        if date_filter == "Today":
+            cutoff_time = now - one_day
+        elif date_filter == "Last 7 Days":
+            cutoff_time = now - (7 * one_day)
+        elif date_filter == "Last 30 Days":
+            cutoff_time = now - (30 * one_day)
+        elif date_filter == "Last 90 Days":
+            cutoff_time = now - (90 * one_day)
+        else:
+            cutoff_time = 0  # All time
+        
+        # Loop through all rows and apply filters
+        for row in range(self.files_table.rowCount()):
+            # Get the file data from the ID column item
+            id_item = self.files_table.item(row, 0)
+            if not id_item:
+                continue
+            
+            file_data = id_item.data(Qt.UserRole)
+            if not file_data:
+                continue
+            
+            # Check if the file matches the search text
+            file_id = file_data.get('id', '').lower()
+            filename = file_data.get('filename', '').lower()
+            
+            matches_search = (not search_text or 
+                             search_text in file_id or 
+                             search_text in filename)
+            
+            # Check if the file matches the date filter
+            created_at = file_data.get('created_at', 0)
+            matches_date = created_at >= cutoff_time
+            
+            # Show/hide the row based on the filters
+            self.files_table.setRowHidden(row, not (matches_search and matches_date)) 
+
+    def _retry_initialization(self):
+        """Retry initializing the storage manager and UI"""
+        try:
+            self.storage_manager = OpenAIStorageManager()
+            
+            # Clear the current layout
+            if self.layout():
+                QWidget().setLayout(self.layout())
+            
+            # Initialize signals and UI
+            self.signals.error.connect(self._show_error)
+            self.active_workers = []
+            self.init_ui()
+            
+            QMessageBox.information(
+                self,
+                "Connection Successful",
+                "Successfully connected to the OpenAI API. The Vector Store panel is now available."
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Initialization Error",
+                f"Failed to initialize the OpenAI storage manager: {str(e)}\n\n"
+                f"Please check your OpenAI API key and connectivity."
+            )

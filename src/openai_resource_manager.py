@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+"""
+OpenAI Resource Manager
+
+This module provides a comprehensive interface for managing OpenAI resources, including:
+- Vector stores (create, list, retrieve, delete)
+- Files (upload, list, retrieve, download, delete)
+- Pattern-based resource management (find and delete by pattern)
+
+It can be used both programmatically as a library and as a standalone command-line tool.
+"""
 
 import argparse
 import json
@@ -20,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-class OpenAIStorageManager:
+class OpenAIResourceManager:
     def __init__(self):
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
@@ -279,6 +289,45 @@ class OpenAIStorageManager:
             logger.error(f"Error in delete_vector_stores_by_pattern: {str(e)}")
             return []
 
+    def download_vector_store_files(self, vector_store_id: str, output_dir: str) -> List[str]:
+        """Download all files from a vector store to a directory."""
+        try:
+            # Get files in vector store
+            files = self.list_vector_store_files(vector_store_id)
+            if not files or "data" not in files:
+                logger.error(f"No files found in vector store {vector_store_id}")
+                return []
+            
+            # Make sure output directory exists
+            os.makedirs(output_dir, exist_ok=True)
+            
+            downloaded_files = []
+            for file in files["data"]:
+                file_id = file.get("id")
+                if not file_id:
+                    continue
+                    
+                # Get the file content
+                content = self.get_file_content(file_id)
+                if not content:
+                    logger.error(f"Could not download file {file_id}")
+                    continue
+                
+                # Save to output directory
+                filename = file.get("filename", f"file_{file_id}")
+                output_path = os.path.join(output_dir, filename)
+                
+                with open(output_path, "wb") as f:
+                    f.write(content)
+                
+                downloaded_files.append(output_path)
+                logger.info(f"Downloaded {filename} to {output_path}")
+            
+            return downloaded_files
+        except Exception as e:
+            logger.error(f"Error downloading vector store files: {str(e)}")
+            return []
+
 def format_timestamp(timestamp: int) -> str:
     """Convert Unix timestamp to human-readable format."""
     return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
@@ -343,7 +392,7 @@ def print_interactive_help():
     print("  --vs-delete-where <pattern>   Find and delete vector stores containing pattern in name")
     print("  --vs-delete-where-dry <pat>   Show vector stores that would be deleted by pattern")
 
-def parse_interactive_command(cmd: str, manager: OpenAIStorageManager):
+def parse_interactive_command(cmd: str, manager: OpenAIResourceManager):
     """Parse and execute interactive commands."""
     parts = cmd.split()
     if not parts:
@@ -532,8 +581,8 @@ def interactive_mode():
     """Run the program in interactive mode."""
     try:
         logger.info("Starting interactive mode")
-        manager = OpenAIStorageManager()
-        print("OpenAI Storage Management Tool - Interactive Mode")
+        manager = OpenAIResourceManager()
+        print("OpenAI Resource Manager - Interactive Mode")
         print("Type --help for available commands or --exit to quit")
         
         while True:
@@ -558,7 +607,7 @@ def interactive_mode():
 def main():
     if len(sys.argv) > 1:
         # Original command-line mode
-        parser = argparse.ArgumentParser(description="OpenAI Storage Management Tool")
+        parser = argparse.ArgumentParser(description="OpenAI Resource Manager - Tool for managing OpenAI vector stores and files")
         subparsers = parser.add_subparsers(dest="command", help="Commands")
 
         # List vector stores
@@ -611,7 +660,7 @@ def main():
         file_content_parser.add_argument("--output", help="Output file path")
 
         args = parser.parse_args()
-        manager = OpenAIStorageManager()
+        manager = OpenAIResourceManager()
 
         if args.command == "list":
             stores = manager.list_vector_stores(limit=args.limit, order=args.order)

@@ -26,7 +26,7 @@ class LeadAssistantConfig:
           name="lead_assistant",
           description="An agent that leads a conversation.",
           instructions="""
-          You are an advanced AI agent with these capabilities:
+          You are an advanced AI agent with these capabilities when asked say your name is lead_assistant:
 
           - Internal chain-of-thought reasoning (hidden from final output)
           - Zero-shot prompting

@@ -200,20 +200,21 @@ class AssistantsPanel(QWidget):
         # Sort assistants by created_at (newest first)
         assistants.sort(key=lambda x: x.created_at, reverse=True)
         
+        # First, add all assistants to the list without highlighting
         active_item = None
         for assistant in assistants:
             item = QListWidgetItem(assistant.name or f"Assistant {assistant.id[:8]}...")
             item.setData(Qt.UserRole, assistant)
             
-            # Highlight active assistant if exists
+            # Track active assistant item if it exists
             if hasattr(self, 'active_assistant') and self.active_assistant and self.active_assistant.id == assistant.id:
-                item.setBackground(QColor("#2A4D69"))
                 active_item = item
-            
+                
             self.assistant_list.addItem(item)
         
-        # Select and scroll to active item if exists
+        # Now highlight only the active item if it exists
         if active_item:
+            active_item.setBackground(QColor("#2A4D69"))
             active_item.setSelected(True)
             self.assistant_list.scrollToItem(active_item)
             self.show_assistant_details(active_item)
@@ -423,7 +424,7 @@ class AssistantsPanel(QWidget):
         if self.toggle_button.isChecked():
             # Store the previously active assistant ID (to restore later)
             from src.openai_assistant import ClientConfig
-            self.previous_assistant_id = ClientConfig.BENDER
+            self.previous_assistant_id = ClientConfig.LEAD_ASSISTANT_ID
             
             # Set the new assistant for the chat
             from src.signals import global_signals
@@ -436,7 +437,13 @@ class AssistantsPanel(QWidget):
             # Disable delete button for the active assistant
             self.delete_button.setEnabled(False)
             
-            # Highlight the item in the list
+            # Clear all highlights first
+            for i in range(self.assistant_list.count()):
+                item = self.assistant_list.item(i)
+                if item and hasattr(item, 'setBackground'):
+                    item.setBackground(QColor("transparent"))
+            
+            # Highlight the selected item in the list
             selected_items[0].setBackground(QColor("#2A4D69"))
             
             # Store the current assistant
@@ -455,9 +462,11 @@ class AssistantsPanel(QWidget):
             # Re-enable delete button
             self.delete_button.setEnabled(True)
             
-            # Remove highlighting
-            if selected_items:
-                selected_items[0].setBackground(QColor("transparent"))
+            # Remove highlighting from all items
+            for i in range(self.assistant_list.count()):
+                item = self.assistant_list.item(i)
+                if item and hasattr(item, 'setBackground'):
+                    item.setBackground(QColor("transparent"))
             
             # Clear active assistant
             self.active_assistant = None

@@ -221,6 +221,32 @@ class ClientConfig:
     POLL_INTERVAL = 2 if ENVIRONMENT == "development" else 5
     
     @classmethod
+    def load_config(cls):
+        """
+        Load configuration settings from environment variables.
+        This method can be extended to load from a config file or other sources.
+        """
+        # Reload environment variables in case they were updated
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        # Update API keys
+        cls.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+        cls.GOOGLE_GEMINI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
+        cls.ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+        
+        # Update settings based on environment
+        cls.DEBUG_MODE = cls.ENVIRONMENT == "development"
+        cls.POLL_INTERVAL = 2 if cls.ENVIRONMENT == "development" else 5
+        
+        # The LEAD_ASSISTANT_ID should be set by the LeadAssistantConfig
+        # This is just a failsafe in case it wasn't set
+        if cls.LEAD_ASSISTANT_ID is None:
+            cls.LEAD_ASSISTANT_ID = os.getenv("ASSISTANT_ID")
+            
+        return cls
+    
+    @classmethod
     def validate_config(cls):
         """Validate that required configuration is present"""
         if not cls.OPENAI_API_KEY:
@@ -273,48 +299,85 @@ def upload_file(file_path):
 
 def send_user_message(thread_id, message, file_path=None):
     """
-    Sends a message to a specified chat thread.
-    - Optionally uploads a file if file_path is provided.
-    - Constructs message payload with role "user".
-    Returns the API response or None if an error occurs.
+    Send a user message to the thread.
+    
+    Args:
+        thread_id (str): The thread ID
+        message (str): The message content
+        file_path (str, optional): Path to a file to upload along with the message
+    
+    Returns:
+        The created message object
     """
-    console = Console()
     client = OpenAI(api_key=ClientConfig.OPENAI_API_KEY)
+    console = Console()
     
-    # Set up the message content.
-    content = message
-    file_ids = []
-    
-    # Check for file attachment and upload if present.
-    if file_path:
-        if not os.path.exists(file_path):
-            pretty_print(f"File not found: {file_path}")
-            return
-            
-        file_id = upload_file(client, file_path)
-        if file_id:
-            file_ids.append(file_id)
-    
-    # Prepare and send the message payload.
     try:
-        message_data = {
-            "thread_id": thread_id,
-            "role": "user",
-            "content": content
-        }
-        if file_ids:
-            message_data["file_ids"] = file_ids
-            console.print("Creating message with file attachment", style="bold green")
+        # Handle file uploads if provided
+        if file_path:
+            file_ids = []
+            try:
+                file_id = upload_file(file_path)
+                if file_id:
+                    file_ids.append(file_id)
+                    
+                # Add the message to the thread with file_ids
+                message = client.beta.threads.messages.create(
+                    thread_id=thread_id,
+                    role="user",
+                    content=message,
+                    file_ids=file_ids
+                )
+            except Exception as e:
+                console.print(f"[bold red]Error uploading file: {e}[/bold red]")
+                # Fallback to message without file
+                message = client.beta.threads.messages.create(
+                    thread_id=thread_id,
+                    role="user",
+                    content=message
+                )
         else:
-            console.print("Creating message", style="bold green")
-        
-        response = client.beta.threads.messages.create(**message_data)
-        console.print("Message sent successfully", style="bold green")
-        return response
+            # Add the message to the thread without file_ids
+            message = client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=message
+            )
+        return message
     except Exception as e:
-        console.print("Error sending message:", style="bold red")
-        console.print(str(e), style="bold red")
-        return None
+        console.print(f"[bold red]Error sending message: {e}[/bold red]")
+        if hasattr(e, 'response') and e.response:
+            console.print(f"API Error: {e.response}", style="bold red")
+        raise e
+
+def send_assistant_message(thread_id, content):
+    """
+    Send a message as the assistant in an existing thread.
+    This is useful for adding analysis results or other system-generated content
+    to maintain conversation continuity.
+    
+    Args:
+        thread_id: The thread ID to add the message to
+        content: The message content to add
+        
+    Returns:
+        The created message object
+    """
+    try:
+        # Get client
+        client = OpenAI(api_key=ClientConfig.OPENAI_API_KEY)
+        
+        # Add the message to the thread
+        message = client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="assistant",
+            content=content
+        )
+        
+        return message
+    except Exception as e:
+        print(f"Error sending assistant message: {str(e)}")
+        return None  # Return None instead of raising the exception to prevent cascading errors
 
 def start_run(thread_id, ASSISTANT_ID):
     """
@@ -463,7 +526,7 @@ def handle_required_action(client, run, thread_id):
             console.print(f"Executing: {tool_call.function.name}", style="bold green")
             # Execute the function with provided arguments but don't append to tool_outputs
             # Just get the response for logging purposes
-            output, context = execute_function(thread_id, tool_call, tool_outputs)
+            output, context = execute_function(thread_id, tool_call, tool_outputs, run_id=run.id)
             
             console.print("Function Output:", style="bold green")
             pretty_print(output)
@@ -517,7 +580,7 @@ def process_run_completion(client, thread_id):
             # elif content_type == "text":
             #     pretty_print(content)
 
-def execute_function(thread_id, tool_call, tool_outputs_queue, gui_mode=True):
+def execute_function(thread_id, tool_call, tool_outputs_queue, run_id=None, gui_mode=True):
     """Execute a function called by the assistant and submit outputs."""
     try:
         # Access properties correctly from the tool_call object
@@ -549,6 +612,7 @@ def execute_function(thread_id, tool_call, tool_outputs_queue, gui_mode=True):
                 "function_name": function_name,
                 "thread_id": thread_id,
                 "tool_call_id": tool_call.id,
+                "run_id": run_id,  # Include the run_id
                 **function_args  # Include any args that were provided
             }
             
