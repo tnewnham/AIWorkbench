@@ -10,6 +10,145 @@ console = Console()
 
 OPEN_AI_KEY = ClientConfig.OPENAI_API_KEY
 
+class LeadAssistantConfig:
+    """Configuration class for OpenAI assistants"""
+    def __init__(self):
+        self.ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+        self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+        self.agent_created = False
+
+        console.print("Assistant Config initialized", style="bold green")
+
+        assistant_manager = OpenAiAssistantManager(api_key=self.OPENAI_API_KEY)
+
+        lead_assistant = assistant_manager.create_assistant(
+          model="gpt-4o",
+          name="lead_assistant",
+          description="An agent that leads a conversation.",
+          instructions="""
+          You are an advanced AI agent with these capabilities:
+
+          - Internal chain-of-thought reasoning (hidden from final output)
+          - Zero-shot prompting
+          - Code generation (with access to a code compiler)
+          - Vector store retrieval (structured/unstructured data)
+
+          Objectives:
+          - Solve problems with step-by-step reasoning.
+          - Generate code for algorithmic, analytical, or iterative tasks.
+          - Ground answers in recent, authoritative data.
+          - Provide clear, concise responses.
+
+          Operational Rules:
+
+          A. Code Compiler Use Cases
+          - Use code for algorithm design, data analysis, iterative tasks, and solution verification.
+          - Example:
+            - Query: "Calculate the 95% confidence interval for this dataset."
+            - Action: Write Python code to compute the mean, standard deviation, and confidence interval.
+
+          B. Zero-Shot Prompting Use Cases
+          - Use for conceptual explanations, summarization, analogies, and frameworks.
+            - Examples:
+              - "What is entropy?"
+              - "Explain the French Revolution in 3 sentences"
+              - "Compare blockchain to a ledger."
+
+          C. Vector Store Data Handling
+          - Default to the most recent and authoritative data (e.g., 2024 models over 2010).
+          - If a query specifies a historical timeframe, use data from that period.
+          - If sources conflict, cross-verify with official or peer-reviewed data. If no clear authority, note the      discrepancy and default to majority consensus.
+          - Briefly cite sources when critical (e.g., "According to WHO 2023 data…").
+
+          D. Clarification Protocol
+          - Ask for clarification only when the query is ambiguous, parameters are missing, or terms conflict.
+          - Limit follow-up to one clarifying question per ambiguity.
+
+          E. Error Handling
+          - If code compilation fails, debug internally by checking syntax and logic.
+          - If unresolved, explain the issue concisely (e.g., "Missing input data for variable X").
+          - If vector store data is missing, state assumptions clearly.
+
+          Example Workflow:
+          - Query: "Predict the effect of a 1% Fed rate hike on tech stocks."
+          - Data Retrieval: Pull recent Fed rate changes (e.g., July 2024) and tech stock data.
+          - Conflict Resolution: Default to official analysis if sources conflict.
+          - Code Generation: Write Python script modeling stock returns against rate hikes.
+          - Output: "Based on Federal Reserve 2024 data and historical S&P 500 tech sector trends, a 1% rate hike correlates with …
+          """,
+          tools=[
+              {
+                  "type": "code_interpreter"
+              },
+              {
+                  "type": "file_search",
+                  "file_search": {
+                      "max_num_results": None,
+                      "ranking_options": {
+                          "score_threshold": 0.0,
+                          "ranker": "default_2024_08_21"
+                      }
+                  }
+              },
+              {
+                  "type": "function",
+                  "function": {
+                      "name": "financial_analytics",
+                      "description": "When the user requests to do some kind of financial analysis with provided documents. Triggers the financial analytics agent flow.",
+                      "parameters": {
+                          "type": "object",
+                          "properties": {
+                              "start_flow": {
+                                  "type": "boolean",
+                                  "description": "Set to true to start the flow."
+                              }
+                          },
+                          "required": ["start_flow"],
+                          "additionalProperties": False
+                      },
+                      "strict": True
+                  }
+              },
+              {
+                  "type": "function",
+                  "function": {
+                      "name": "research_paper_analysis",
+                      "description": "when the user asks do analyze a research paper. triggers the research paper       analysis agent flow.",
+                      "parameters": {
+                          "type": "object",
+                          "required": ["start_flow"],
+                          "properties": {
+                              "start_flow": {
+                                  "type": "boolean",
+                                  "description": "Set to true to start the flow."
+                              }
+                          },
+                          "required": ["start_flow"],
+                          "additionalProperties": False
+                      },
+                      "strict": True
+                  }
+              }
+          ],
+          response_format={
+              "type": "text"
+          },
+          temperature=0.89,
+          tool_resources={
+              "code_interpreter": {
+                  "file_ids": []
+              },
+              "file_search": {
+                  "vector_store_ids": []
+              }
+          },
+          top_p=1.0
+        )
+        console.print(f"Lead Assistant created: {lead_assistant.id}", style="bold green")
+        self.LEAD_ASSISTANT_ID = lead_assistant.id
+        
+        # Mark the agent as created
+        self.agent_created = True
 
 ## Financial Assistant Config
 class FinancialAssistantConfig:
@@ -239,6 +378,7 @@ class FinancialAssistantConfig:
         console.print(f"Reviewer Agent created: {reviewer_agent.id}", style="bold green")
         self.REVIEWER_AGENT_ID = reviewer_agent.id
 
+        # Mark agents as created to prevent redundant creation
         self.agent_created = True
 
 
@@ -376,7 +516,6 @@ class ResearchAssistantConfig:
                 Example
                 Input:
                 "What are the report's primary recommendations for cost reduction?"
-[]
                 Process:
 
                 Key terms: "report," "primary recommendations," "cost reduction."

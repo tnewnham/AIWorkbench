@@ -125,8 +125,27 @@ def main():
     Entry point for the interactive chat program.
     Parses command-line arguments to determine whether to use the GUI or terminal interface.
     """
-    # Load and validate environment variables
-    env_vars = load_and_validate_environment()
+    # Load environment variables for API keys
+    load_dotenv()
+    
+    # Validate API keys
+    console = Console()
+    if not os.getenv("OPENAI_API_KEY"):
+        console.print("Error: OPENAI_API_KEY environment variable is not set.", style="bold red")
+        sys.exit(1)
+    
+    # Initialize lead assistant config first
+    try:
+        from src.assistant_config import LeadAssistantConfig
+        lead_assistant_config = LeadAssistantConfig()
+        
+        # Set the lead assistant ID in the ClientConfig
+        from src.openai_assistant import ClientConfig
+        ClientConfig.LEAD_ASSISTANT_ID = lead_assistant_config.LEAD_ASSISTANT_ID
+        ClientConfig.BENDER = lead_assistant_config.LEAD_ASSISTANT_ID  # Use lead assistant as default
+    except Exception as e:
+        console = Console()
+        console.print(f"Warning: Failed to initialize Lead Assistant: {e}", style="bold yellow")
     
     parser = argparse.ArgumentParser(description="Chat bot using OpenAI Assistant API")
     parser.add_argument(

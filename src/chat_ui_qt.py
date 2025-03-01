@@ -16,9 +16,9 @@ import ctypes
 
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QTextEdit, QPushButton, QTabWidget, 
-                           QLabel, QScrollArea, QFrame, QStackedWidget, QSizePolicy, QInputDialog, QDialog)
+                           QLabel, QScrollArea, QFrame, QStackedWidget, QSizePolicy, QInputDialog, QDialog, QStyle)
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
-from PyQt5.QtGui import QFont, QColor, QPalette
+from PyQt5.QtGui import QFont, QColor, QPalette, QIcon
 import markdown2
 
 # Import the necessary components from the existing code
@@ -33,6 +33,7 @@ from src.openai_assistant import (
 from src.vector_store_panel import VectorStorePanel
 from src.workflow_manager import WorkflowManager
 from src.signals import global_signals
+from src.assistants_panel import AssistantsPanel
 
 class SignalHandler(QObject):
     """Signal handler for thread communication"""
@@ -310,6 +311,13 @@ class ChatArea(QScrollArea):
                 item.widget().deleteLater()
         self.messages = []
 
+    def get_last_system_message(self):
+        """Get the text of the last system message"""
+        for i in range(len(self.messages) - 1, -1, -1):
+            if self.messages[i][0] == "system":
+                return self.messages[i][1]
+        return ""
+
 class SidePanel(QWidget):
     """Side panel with vertical buttons and stacked content"""
     
@@ -490,6 +498,10 @@ class ChatTab(QWidget):
         
         # Connect to global signals
         global_signals.analysis_request.connect(self._handle_analysis_request)
+        global_signals.set_assistant_signal.connect(self.set_assistant)
+        
+        # Initialize with the lead assistant
+        self.current_assistant_id = ClientConfig.LEAD_ASSISTANT_ID
         
         # Start initialization thread
         threading.Thread(target=self._initialize_chat, daemon=True).start()
@@ -497,7 +509,16 @@ class ChatTab(QWidget):
     def _initialize_chat(self):
         """Initialize chat in a background thread"""
         try:
-            # Check configuration
+            # Initialize the lead assistant first if not already done
+            if not ClientConfig.LEAD_ASSISTANT_ID:
+                from src.assistant_config import LeadAssistantConfig
+                lead_assistant_config = LeadAssistantConfig()
+                ClientConfig.LEAD_ASSISTANT_ID = lead_assistant_config.LEAD_ASSISTANT_ID
+                
+                # Use the lead assistant ID as the default assistant
+                ClientConfig.BENDER = ClientConfig.LEAD_ASSISTANT_ID
+            
+            # Check configuration - only validates API keys now
             ClientConfig.validate_config()
             
             # Initialize chat thread
@@ -566,9 +587,11 @@ class ChatTab(QWidget):
                 )
                 return
             
-            # Send message and start run
+            # CRITICAL FIX: Send the user message to the thread before starting the run
             send_user_message(self.chat_thread.id, message_text)
-            run = start_run(self.chat_thread.id, ClientConfig.BENDER)
+            
+            # Modified start_run call to use the current assistant ID
+            run = start_run(self.chat_thread.id, self.current_assistant_id)
             
             # Add thinking message
             self.signal_handler.message_signal.emit(
@@ -660,10 +683,21 @@ class ChatTab(QWidget):
             agent_config=agent_config
         )
     
-    def _on_workflow_progress(self, message, percentage):
+    def _on_workflow_progress(self, message, percent):
         """Handle workflow progress updates"""
+        # Skip progress messages if we've already shown the assistants
+        # Only show the initial "Analysis running" message
+        if "Using assistants:" in self.chat_display.get_last_system_message():
+            if percent == 0 and message == "Starting analysis":
+                self.signal_handler.message_signal.emit(
+                    "system", "Analysis running...", None
+                )
+            # Skip other progress messages to keep the UI clean
+            return
+        
+        # Show other important progress messages (especially at the beginning)
         self.signal_handler.message_signal.emit(
-            "system", f"Analysis progress ({percentage}%): {message}", None
+            "system", message, None
         )
     
     def _on_workflow_result(self, result, context):
@@ -805,8 +839,9 @@ class ChatTab(QWidget):
                 self._enable_input()
                 return
             
-            # Get agent config from the created assistants
+            # Get agent config from the created assistants but INCLUDE THE CONFIG OBJECT
             agent_config = {
+                "assistant_config": assistant_config,  # Pass the whole config object
                 "OUTLINE_AGENT_ID": assistant_config.OUTLINE_AGENT_ID,
                 "FORMULATE_QUESTIONS_AGENT_ID": assistant_config.FORMULATE_QUESTIONS_AGENT_ID, 
                 "VECTOR_STORE_SEARCH_AGENT_ID": assistant_config.VECTOR_STORE_SEARCH_AGENT_ID,
@@ -820,7 +855,7 @@ class ChatTab(QWidget):
             
             # Add debug output
             self.signal_handler.message_signal.emit(
-                "system", f"Using dynamically created assistants:\n- Outline: {agent_config['OUTLINE_AGENT_ID'][:8]}...\n- Questions: {agent_config['FORMULATE_QUESTIONS_AGENT_ID'][:8]}...\n- Search: {agent_config['VECTOR_STORE_SEARCH_AGENT_ID'][:8]}...\n- Reviewer: {agent_config['REVIEWER_AGENT_ID'][:8]}...", None
+                "system", f"Using assistants:\n- Outline: {agent_config['OUTLINE_AGENT_ID'][:8]}...\n- Questions: {agent_config['FORMULATE_QUESTIONS_AGENT_ID'][:8]}...\n- Search: {agent_config['VECTOR_STORE_SEARCH_AGENT_ID'][:8]}...\n- Reviewer: {agent_config['REVIEWER_AGENT_ID'][:8]}...", None
             )
             
             # Start analysis with the user-provided prompt
@@ -865,6 +900,21 @@ class ChatTab(QWidget):
                 print(f"\nDEBUG - .env file not found at: {env_path}")
         except Exception as e:
             print(f"Error reading .env file: {str(e)}")
+
+    def set_assistant(self, assistant_id):
+        """Set the assistant for the chat thread"""
+        if assistant_id:
+            self.current_assistant_id = assistant_id
+            # Log the change
+            self.signal_handler.message_signal.emit(
+                "system", f"Chat assistant changed. Assistant ID: {assistant_id[:8]}...", None
+            )
+        else:
+            # If no assistant_id provided, fall back to lead assistant
+            self.current_assistant_id = ClientConfig.LEAD_ASSISTANT_ID
+            self.signal_handler.message_signal.emit(
+                "system", "Chat assistant reset to default", None
+            )
 
 class SettingsPanel(QWidget):
     """Panel for viewing and editing assistant configuration"""
@@ -1079,8 +1129,12 @@ class ChatBotApp(QMainWindow):
         super().__init__()
         
         # Set up window
-        self.setWindowTitle("VS Code Chat Interface")
+        self.setWindowTitle("Solstice")
         self.resize(1200, 800)
+        
+        # Ensure the window uses the application icon
+        if QApplication.instance().windowIcon():
+            self.setWindowIcon(QApplication.instance().windowIcon())
         
         # Set dark title bar on Windows
         if platform.system() == "Windows":
@@ -1119,29 +1173,78 @@ class ChatBotApp(QMainWindow):
             button.setChecked(True)
             self.left_panel.content_stack.setCurrentIndex(0)
         
-        main_layout.addWidget(self.left_panel, 1)
+        main_layout.addWidget(self.left_panel, 2)
         
         # Main chat area
         self.chat_tab = ChatTab()
-        main_layout.addWidget(self.chat_tab, 3)
+        main_layout.addWidget(self.chat_tab, 4)
         
         # Right panel
         self.right_panel = SidePanel("Right")
-        main_layout.addWidget(self.right_panel, 1)
+        assistants_panel = AssistantsPanel()
+        self.right_panel.add_custom_page("Assistants", assistants_panel)
+        
+        main_layout.addWidget(self.right_panel, 3)
 
-        # Now update the left_panel in ChatBotApp to include this settings panel
-        settings_panel = SettingsPanel()
-        self.left_panel.add_custom_page("Settings", settings_panel)
+        # Set Assistants tab as the default selected one
+        if self.right_panel.button_layout.count() > 0:
+            button = self.right_panel.button_layout.itemAt(0).widget()
+            button.setChecked(True)
+            self.right_panel.content_stack.setCurrentIndex(0)
 
 def main():
     """Run the chat bot application"""
     # Set environment variable to indicate GUI mode
     os.environ["GUI_MODE"] = "1"
     
+    # Set application details for proper taskbar icon handling
+    if platform.system() == "Windows":
+        # Import windows-specific libraries
+        try:
+            import ctypes
+            # Set app ID so Windows properly associates icon with the application in taskbar
+            app_id = "Solstice.ChatApplication.1.0"
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+            print(f"Set Windows AppUserModelID to: {app_id}")
+        except Exception as e:
+            print(f"Failed to set application ID: {e}")
+    
     app = QApplication(sys.argv)
+    app.setApplicationName("Solstice")
+    app.setApplicationDisplayName("Solstice")
     VSCodeStyleHelper.apply_styles(app)
     
+    # Get absolute path to the current file's directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # Move up one directory to get to the project root
+    project_root = os.path.dirname(current_dir)
+    # Path to the icon
+    icon_path = os.path.join(project_root, "taskbarIcon.png")
+    
+    # Print debug info
+    print(f"Looking for icon at: {icon_path}")
+    print(f"File exists: {os.path.exists(icon_path)}")
+    
+    # Create QIcon instance
+    icon = QIcon()
+    
+    # Try to set the icon
+    if os.path.exists(icon_path):
+        print("Setting custom icon")
+        # Load the icon with multiple sizes to ensure proper scaling
+        icon = QIcon(icon_path)
+        # Set it for the application
+        app.setWindowIcon(icon)
+    else:
+        print("Custom icon not found, using built-in icon")
+        # Use a built-in icon as fallback
+        icon = app.style().standardIcon(QStyle.SP_ComputerIcon)
+        app.setWindowIcon(icon)
+    
+    # Create and show the window
     window = ChatBotApp()
+    # Also set the icon on the main window
+    window.setWindowIcon(icon)
     window.show()
     
     sys.exit(app.exec_())

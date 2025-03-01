@@ -32,7 +32,7 @@ class FunctionTool:
 
 # Modify function_tool_mapping to use dynamic imports in the lambda functions
 function_tool_mapping = {
-    "quarterly_financial_analytics": FunctionTool(
+    "financial_analytics": FunctionTool(
         function=lambda user_prompt, folder_path: _execute_analysis_task(user_prompt, folder_path, "financial"),
         config_type="analyst_function"
     ),
@@ -78,55 +78,96 @@ class OpenAiAssistantManager:
     Manages operations related to OpenAI assistants via the OpenAI API.
     Provides methods to create, list, retrieve, modify, and delete assistants.
     """
-    def __init__(self, api_key: str):
-        # Initialize OpenAI client using the provided API key.
-        self.client = OpenAI(api_key=api_key)
+    def __init__(self, api_key=None):
+        """Initialize the client with the API key"""
+        if api_key:
+            self.client = OpenAI(api_key=api_key)
+        else:
+            self.client = OpenAI()
 
-    def create_assistant(self,
-                         model: str,
-                         name: str = None,
-                         description: str = None,
-                         instructions: str = None,
-                         tools: list = None,
-                         tool_resources: dict = None,
-                         metadata: dict = None,
-                         temperature: float = 1.0,
-                         top_p: float = 1.0,
-                         response_format="auto"):
+    def list_assistants(self, name=None):
         """
-        Create a new assistant with the given configuration parameters.
-        Parameters mirror API requirements (model, name, description, etc.).
+        List all assistants, optionally filtering by name
+        
+        Args:
+            name (str, optional): Filter assistants by this name
+            
+        Returns:
+            list: List of assistant objects
         """
-        return self.client.beta.assistants.create(
-            model=model,
-            name=name,
-            description=description,
-            instructions=instructions,
-            tools=tools or [],
-            tool_resources=tool_resources,
-            metadata=metadata,
-            temperature=temperature,
-            top_p=top_p,
-            response_format=response_format
-        )
+        assistants = []
+        page_cursor = None
+        
+        while True:
+            params = {"limit": 100}
+            if page_cursor:
+                params["after"] = page_cursor
+            
+            response = self.client.beta.assistants.list(**params)
+            
+            # If name filter is provided, only add matching assistants
+            if name:
+                for assistant in response.data:
+                    if assistant.name == name:
+                        assistants.append(assistant)
+            else:
+                assistants.extend(response.data)
+            
+            if response.has_more:
+                page_cursor = response.last_id
+            else:
+                break
+        
+        return assistants
 
-    def list_assistants(self,
-                        limit: int = 20,
-                        order: str = "desc",
-                        after: str = None,
-                        before: str = None):
+    def delete_assistant(self, assistant_id):
         """
-        List existing assistants with optional pagination.
-        - limit: Number of assistants to list.
-        - order: Sort order ('desc' or 'asc').
-        - after/before: Cursors for pagination.
+        Delete an assistant by ID
+        
+        Args:
+            assistant_id (str): ID of the assistant to delete
+            
+        Returns:
+            dict: Deletion response
         """
-        return self.client.beta.assistants.list(
-            limit=limit,
-            order=order,
-            after=after,
-            before=before
-        )
+        return self.client.beta.assistants.delete(assistant_id)
+
+    def create_assistant(self, name=None, **kwargs):
+        """
+        Create a new assistant, deleting any existing assistants with the same name
+        
+        Args:
+            name (str): Name of the assistant
+            **kwargs: Additional arguments for assistant creation
+            
+        Returns:
+            Assistant: Created assistant object
+        """
+        # If name is provided, check for existing assistants with the same name
+        if name:
+            try:
+                console = Console()
+                existing_assistants = self.list_assistants(name=name)
+                
+                # Delete any existing assistants with the same name
+                if existing_assistants:
+                    console.print(f"Found {len(existing_assistants)} existing assistant(s) with name '{name}'", style="bold yellow")
+                    
+                    for assistant in existing_assistants:
+                        console.print(f"Deleting assistant '{name}' (ID: {assistant.id})", style="bold yellow")
+                        try:
+                            self.delete_assistant(assistant.id)
+                            console.print(f"Successfully deleted assistant (ID: {assistant.id})", style="green")
+                        except Exception as e:
+                            console.print(f"Error deleting assistant (ID: {assistant.id}): {str(e)}", style="bold red")
+                            # Continue with other deletions even if one fails
+            except Exception as e:
+                console.print(f"Error checking for existing assistants: {str(e)}", style="bold red")
+                # Continue with assistant creation even if listing fails
+        
+        # Create the new assistant
+        console.print(f"Creating new assistant '{name}'...", style="bold blue")
+        return self.client.beta.assistants.create(name=name, **kwargs)
 
     def retrieve_assistant(self, assistant_id: str):
         """
@@ -164,56 +205,29 @@ class OpenAiAssistantManager:
             response_format=response_format
         )
 
-    def delete_assistant(self, assistant_id: str):
-        """
-        Delete an assistant identified by its ID.
-        """
-        return self.client.beta.assistants.delete(assistant_id)
-
 class ClientConfig:
-    """
-    Configuration class for OpenAI assistants.
-    Centralizes environment variables, debug settings, and polling intervals.
-    """
-    console = Console()  # Shared console instance for logging
-    ENVIRONMENT = os.getenv("ENVIRONMENT", "development")  # Default to development environment
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")             # Required API key for OpenAI services
-    GOOGLE_GEMINI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")   # Optional: Google Gemini API key
-    BENDER = os.getenv("BENDER")
+    """Configuration for OpenAI client and assistants"""
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    GOOGLE_GEMINI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
+    ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
     
-    # Set debug mode and polling interval based on environment.
-    DEBUG_MODE = ENVIRONMENT == "development"  # True if in development mode
-    POLL_INTERVAL = 2 if ENVIRONMENT == "development" else 5  # Faster polling in development
+    # Assistant IDs will no longer be retrieved from environment variables
+    # They will be set programmatically from assistant_config.py
 
-    # Add new fields for analysis workflow assistants
-    OUTLINE_AGENT_ID = os.getenv("OUTLINE_AGENT_ID")
-    FORMULATE_QUESTIONS_AGENT_ID = os.getenv("FORMULATE_QUESTIONS_AGENT_ID")
-    VECTOR_STORE_SEARCH_AGENT_ID = os.getenv("VECTOR_STORE_SEARCH_AGENT_ID")
-    REVIEWER_AGENT_ID = os.getenv("REVIEWER_AGENT_ID")
-
+    LEAD_ASSISTANT_ID = None
+    
+    # Set debug mode and polling interval based on environment
+    DEBUG_MODE = ENVIRONMENT == "development"
+    POLL_INTERVAL = 2 if ENVIRONMENT == "development" else 5
+    
     @classmethod
     def validate_config(cls):
-        """
-        Validate that all required environment variables are set.
-        Raises an EnvironmentError if a required variable is missing.
-        """
-        console = Console()
-        required_vars = {
-            "OPENAI_API_KEY": cls.OPENAI_API_KEY,
-            "GOOGLE_GEMINI_API_KEY": cls.GOOGLE_GEMINI_API_KEY,
-            "BENDER": cls.BENDER,
-            
-        }
-        # Check for missing environment variables.
-        missing_vars = [var for var, value in required_vars.items() if not value]
-        if missing_vars:
-            raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
+        """Validate that required configuration is present"""
+        if not cls.OPENAI_API_KEY:
+            raise EnvironmentError("OPENAI_API_KEY environment variable is not set.")
         
-        # If in debug mode, print configuration details.
-        if cls.DEBUG_MODE:
-            console.print("Running in DEBUG mode", style="bold green")
-            console.print(f"Environment: {cls.ENVIRONMENT}", style="bold green")
-            console.print(f"Poll interval: {cls.POLL_INTERVAL} seconds", style="bold green")
+        # Only validate the API key - assistant IDs will be validated later
+        # when they're loaded from the assistant_config
 
 def initialize_chat():
     """
@@ -727,7 +741,7 @@ def process_questions_with_search_agent(assistant_id, vector_store_id, questions
     console = Console()
     client = OpenAI(api_key=ClientConfig.OPENAI_API_KEY)
     responses = {"questions_and_answers": []}
-
+    
     try:
         # Retrieve list of questions from the JSON input.
         questions = questions_json.get("questions", [])
@@ -737,7 +751,7 @@ def process_questions_with_search_agent(assistant_id, vector_store_id, questions
             if not question.strip():
                 console.print("Skipping empty question content", style="bold blue")
                 continue
-
+            
             # Create and run a new thread for each question.
             run = client.beta.threads.create_and_run(
                 assistant_id=assistant_id,
@@ -765,6 +779,12 @@ def process_questions_with_search_agent(assistant_id, vector_store_id, questions
                 if run_status.status == 'completed':
                     console.print("Run completed successfully\n", style="bold green")
                     answer = get_last_assistant_message(client, run.thread_id)
+                    
+                    # Print the answer to the terminal
+                    console.print("Answer:", style="bold green")
+                    pretty_print(answer)
+                    console.print("-------------------------------------------", style="bold blue")
+                    
                     responses["questions_and_answers"].append({
                         "question": question,
                         "answer": answer
@@ -843,4 +863,4 @@ def process_writer_agent(gemini_model, combined_message):
             raise RuntimeError("Writer agent returned empty response.")
         return writer_chat
     except Exception as e:
-        raise RuntimeError("Error executing writer agent.") from e
+        raise RuntimeError("Error executing writer agent.")

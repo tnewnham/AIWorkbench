@@ -62,152 +62,193 @@ class AnalysisTask:
         self.OPEN_AI_API_KEY = OPEN_AI_API_KEY
 
     def run_analysis(self):
-        # Add safeguard checks at runtime
-        assert self.OUTLINE_AGENT_ID, "OUTLINE_AGENT_ID is required"
-        assert self.FORMULATE_QUESTIONS_AGENT_ID, "FORMULATE_QUESTIONS_AGENT_ID is required"
-        assert self.VECTOR_STORE_SEARCH_AGENT_ID, "VECTOR_STORE_SEARCH_AGENT_ID is required"
-        assert self.REVIEWER_AGENT_ID, "REVIEWER_AGENT_ID is required"
+        """Run the analysis workflow"""
+        console = Console()
         
         try:
-            # Validate environment settings
-            OPEN_AI_KEY = self.OPEN_AI_API_KEY
-            # Initialize Gemini for token counting
-            genai.configure(api_key=self.GOOGLE_GEMINI_API_KEY)
-            gemini_model = genai.GenerativeModel(
-                model_name="gemini-2.0-flash-thinking-exp-01-21",
-                generation_config = self.WRITER_AGENT_CONFIG,
-                system_instruction= self.WRITER_AGENT_SYSTEM_MESSAGE,
-                tools='code_execution')
-            TOKEN_LIMIT = int(os.getenv("TOKEN_LIMIT", 65536))
-            TOKEN_BUFFER = int(os.getenv("TOKEN_BUFFER", 5000))
+            # Verify all assistants exist before starting the workflow
+            console.print("Verifying assistants...", style="bold green")
+            client = OpenAI(api_key=self.OPEN_AI_API_KEY)
+            
+            try:
+                outline_assistant = client.beta.assistants.retrieve(self.OUTLINE_AGENT_ID)
+                console.print(f"Outline assistant verified: {outline_assistant.name}", style="green")
+            except Exception as e:
+                raise RuntimeError(f"Failed to verify outline assistant: {str(e)}")
+            
+            try:
+                questions_assistant = client.beta.assistants.retrieve(self.FORMULATE_QUESTIONS_AGENT_ID)
+                console.print(f"Questions assistant verified: {questions_assistant.name}", style="green") 
+            except Exception as e:
+                raise RuntimeError(f"Failed to verify questions assistant: {str(e)}")
+            
+            try:
+                search_assistant = client.beta.assistants.retrieve(self.VECTOR_STORE_SEARCH_AGENT_ID)
+                console.print(f"Search assistant verified: {search_assistant.name}", style="green")
+            except Exception as e:
+                raise RuntimeError(f"Failed to verify search assistant: {str(e)}")
+            
+            try:
+                reviewer_assistant = client.beta.assistants.retrieve(self.REVIEWER_AGENT_ID)
+                console.print(f"Reviewer assistant verified: {reviewer_assistant.name}", style="green") 
+            except Exception as e:
+                raise RuntimeError(f"Failed to verify reviewer assistant: {str(e)}")
+            
+            # Continue with the existing workflow
+            # ...
 
-            # Process file paths
-            # If folder_path is a string, assume it's a directory path
-            # If it's a list, assume it's a list of file paths
-            if isinstance(self.folder_path, list):
-                file_paths = self.folder_path
-                # Create a temporary directory to store the vector store files
-                import tempfile
-                folder_dir = tempfile.mkdtemp()
-            else:
-                folder_dir = self.folder_path
-                file_paths = get_all_file_paths_in_directory(folder_dir)
+            # Add safeguard checks at runtime
+            assert self.OUTLINE_AGENT_ID, "OUTLINE_AGENT_ID is required"
+            assert self.FORMULATE_QUESTIONS_AGENT_ID, "FORMULATE_QUESTIONS_AGENT_ID is required"
+            assert self.VECTOR_STORE_SEARCH_AGENT_ID, "VECTOR_STORE_SEARCH_AGENT_ID is required"
+            assert self.REVIEWER_AGENT_ID, "REVIEWER_AGENT_ID is required"
+            
+            try:
+                # Validate environment settings
+                OPEN_AI_KEY = self.OPEN_AI_API_KEY
+                # Initialize Gemini for token counting
+                genai.configure(api_key=self.GOOGLE_GEMINI_API_KEY)
+                gemini_model = genai.GenerativeModel(
+                    model_name="gemini-2.0-flash-thinking-exp-01-21",
+                    generation_config = self.WRITER_AGENT_CONFIG,
+                    system_instruction= self.WRITER_AGENT_SYSTEM_MESSAGE,
+                    tools='code_execution')
+                TOKEN_LIMIT = int(os.getenv("TOKEN_LIMIT", 65536))
+                TOKEN_BUFFER = int(os.getenv("TOKEN_BUFFER", 5000))
 
-            # Create a new vector store and load files from the given folder path
-            search_agent_vector_store = create_vector_store(name="search_agent_vector_store")
-            if not search_agent_vector_store:
-                raise RuntimeError("Failed to create vector store.")
+                # Process file paths
+                # If folder_path is a string, assume it's a directory path
+                # If it's a list, assume it's a list of file paths
+                if isinstance(self.folder_path, list):
+                    file_paths = self.folder_path
+                    # Create a temporary directory to store the vector store files
+                    import tempfile
+                    folder_dir = tempfile.mkdtemp()
+                else:
+                    folder_dir = self.folder_path
+                    file_paths = get_all_file_paths_in_directory(folder_dir)
 
-            vector_store_id = search_agent_vector_store.id
-            upload_files_to_vector_store_only(vector_store_id, file_paths)
+                # Create a new vector store and load files from the given folder path
+                search_agent_vector_store = create_vector_store(name="search_agent_vector_store")
+                if not search_agent_vector_store:
+                    raise RuntimeError("Failed to create vector store.")
 
-            # 1. Outline Agent
-            outline_chat = initialize_chat()
-            if not outline_chat:
-                raise RuntimeError("Failed to initialize chat for outline.")
+                vector_store_id = search_agent_vector_store.id
+                upload_files_to_vector_store_only(vector_store_id, file_paths)
 
-            send_user_message(outline_chat.id, self.user_prompt)
-            outline_run = start_run(outline_chat.id, self.OUTLINE_AGENT_ID)
-            if not outline_run:
-                raise RuntimeError("Failed to start run for outline agent.")
-            outline = process_outline_agent_run(outline_chat.id, outline_run.id)
-            console.print("Final Output from Outline Agent:", style="bold yellow")
-            pretty_print(outline)
+                # 1. Outline Agent
+                console.print("Running analysis outline...", style="bold yellow")
+                outline_chat = initialize_chat()
+                if not outline_chat:
+                    raise RuntimeError("Failed to initialize chat for outline.")
 
-            # 2. Formulate Questions Agent
-            question_chat = initialize_chat()
-            if not question_chat:
-                raise RuntimeError("Failed to initialize chat for question formulation.")
+                send_user_message(outline_chat.id, self.user_prompt)
+                outline_run = start_run(outline_chat.id, self.OUTLINE_AGENT_ID)
+                if not outline_run:
+                    raise RuntimeError("Failed to start run for outline agent.")
+                outline = process_outline_agent_run(outline_chat.id, outline_run.id)
+                console.print("Final Output from Outline Agent:", style="bold yellow")
+                pretty_print(outline)
 
-            send_user_message(question_chat.id, outline)
-            question_run = start_run(question_chat.id, self.FORMULATE_QUESTIONS_AGENT_ID)
-            if not question_run:
-                raise RuntimeError("Failed to start run for question formulation.")
-            questions_string = process_formulate_question_agent_run(question_chat.id, question_run.id)
-            console.print("Final Output from Formulate Question Agent:", style="bold yellow")
-            pretty_print(questions_string)
+                # 2. Formulate Questions Agent
+                console.print("Formulating questions...", style="bold yellow")
+                question_chat = initialize_chat()
+                if not question_chat:
+                    raise RuntimeError("Failed to initialize chat for question formulation.")
 
-            questions_json = json.loads(questions_string)
+                send_user_message(question_chat.id, outline)
+                question_run = start_run(question_chat.id, self.FORMULATE_QUESTIONS_AGENT_ID)
+                if not question_run:
+                    raise RuntimeError("Failed to start run for question formulation.")
+                questions_string = process_formulate_question_agent_run(question_chat.id, question_run.id)
+                console.print("Final Output from Formulate Question Agent:", style="bold yellow")
+                pretty_print(questions_string)
 
-            # 3. Vector Store Search Agent
-            questions_and_answers = process_questions_with_search_agent(
-                assistant_id= self.VECTOR_STORE_SEARCH_AGENT_ID,
-                vector_store_id=vector_store_id,
-                questions_json=questions_json
-            )
-            if not questions_and_answers:
-                raise RuntimeError("Failed to process Q&A with search agent.")
+                questions_json = json.loads(questions_string)
 
-            # Prepare combined message for writer
-            combined_message = self.user_prompt + "\n\n" + outline + "\n\nQuestions and Answers:\n"
-            for qa in questions_and_answers["questions_and_answers"]:
-                combined_message += f"\nQ: {qa['question']}\nA: {qa['answer']}\n"
-
-            # 4. Writer Agent with Gemini
-            writer_chat = process_writer_agent(gemini_model, combined_message)
-            console.print("Writer Agent Response:", style="bold magenta")
-            pretty_print(writer_chat.text)                        
-
-
-            # 5. Loop reviewer feedback
-            while True:
-                reviewer_chat = initialize_chat()
-                if not reviewer_chat:
-                    raise RuntimeError("Failed to initialize chat for reviewer agent.")
-
-                review_message = self.user_prompt + "\n\n" + outline + "\n\n" + writer_chat.text
-                send_user_message(reviewer_chat.id, review_message)
-
-                reviewer_run = start_run(reviewer_chat.id, self.REVIEWER_AGENT_ID)
-                if not reviewer_run:
-                    raise RuntimeError("Failed to start run for reviewer agent.")
-                reviewer_questions_string = process_reviewer_agent_run(reviewer_chat.id, reviewer_run.id)
-                pretty_print(reviewer_questions_string)
-
-                reviewer_questions_json = json.loads(reviewer_questions_string)
-                is_last_questions = reviewer_questions_json.get("last_questions", False)
-
-                if is_last_questions:
-                    console.print("Review Passed", style="bold magenta")
-                    console.print("Final writer input:", style="bold magenta")
-                    #pretty_print(combined_message)
-                    return writer_chat.text, combined_message
-                    #break
-
-                # If not final, the reviewer wants more clarifications
-                new_questions_and_answers = process_questions_with_search_agent(
-                    assistant_id=self.VECTOR_STORE_SEARCH_AGENT_ID,
+                # 3. Vector Store Search Agent
+                questions_and_answers = process_questions_with_search_agent(
+                    assistant_id= self.VECTOR_STORE_SEARCH_AGENT_ID,
                     vector_store_id=vector_store_id,
-                    questions_json=reviewer_questions_json
+                    questions_json=questions_json
                 )
-                if not new_questions_and_answers:
-                    raise RuntimeError("Failed to process reviewer Q&A with search agent.")
+                if not questions_and_answers:
+                    raise RuntimeError("Failed to process Q&A with search agent.")
 
-                questions_and_answers["questions_and_answers"].extend(new_questions_and_answers["questions_and_answers"])
-
+                # Prepare combined message for writer
                 combined_message = self.user_prompt + "\n\n" + outline + "\n\nQuestions and Answers:\n"
                 for qa in questions_and_answers["questions_and_answers"]:
-                    combined_message += f"Q: {qa['question']}\nA: {qa['answer']}\n"
+                    combined_message += f"\nQ: {qa['question']}\nA: {qa['answer']}\n"
 
-                combined_message_tokens_response = gemini_model.count_tokens(combined_message)
-                combined_message_tokens = combined_message_tokens_response.total_tokens
+                # 4. Writer Agent with Gemini
+                writer_chat = process_writer_agent(gemini_model, combined_message)
+                console.print("Writer Agent Response:", style="bold magenta")
+                pretty_print(writer_chat.text)                        
 
-                console.print(f"Combined Message Tokens: {combined_message_tokens}", style="bold yellow")
 
-                if combined_message_tokens < (TOKEN_LIMIT - TOKEN_BUFFER):
-                    writer_chat = process_writer_agent(gemini_model, combined_message)  
+                # 5. Loop reviewer feedback
+                while True:
+                    reviewer_chat = initialize_chat()
+                    if not reviewer_chat:
+                        raise RuntimeError("Failed to initialize chat for reviewer agent.")
 
-                    console.print("Writer Agent Response:", style="bold magenta")
-                    pretty_print(writer_chat.text)
-                else:
-                    console.print("Token limit exceeded. Sending final message and terminating.", style="bold red")
+                    review_message = self.user_prompt + "\n\n" + outline + "\n\n" + writer_chat.text
+                    send_user_message(reviewer_chat.id, review_message)
 
-                    writer_chat = process_writer_agent(gemini_model, combined_message)
+                    reviewer_run = start_run(reviewer_chat.id, self.REVIEWER_AGENT_ID)
+                    if not reviewer_run:
+                        raise RuntimeError("Failed to start run for reviewer agent.")
+                    reviewer_questions_string = process_reviewer_agent_run(reviewer_chat.id, reviewer_run.id)
+                    pretty_print(reviewer_questions_string)
 
-                    console.print("Writer Agent Response:", style="bold magenta")
-                    #pretty_print(writer_chat.text)
-                    return writer_chat.text, combined_message
-                    #break
+                    reviewer_questions_json = json.loads(reviewer_questions_string)
+                    is_last_questions = reviewer_questions_json.get("last_questions", False)
+
+                    if is_last_questions:
+                        console.print("Review Passed", style="bold magenta")
+                        console.print("Final writer input:", style="bold magenta")
+                        #pretty_print(combined_message)
+                        return writer_chat.text, combined_message
+                        #break
+
+                    # If not final, the reviewer wants more clarifications
+                    new_questions_and_answers = process_questions_with_search_agent(
+                        assistant_id=self.VECTOR_STORE_SEARCH_AGENT_ID,
+                        vector_store_id=vector_store_id,
+                        questions_json=reviewer_questions_json
+                    )
+                    if not new_questions_and_answers:
+                        raise RuntimeError("Failed to process reviewer Q&A with search agent.")
+
+                    questions_and_answers["questions_and_answers"].extend(new_questions_and_answers["questions_and_answers"])
+
+                    combined_message = self.user_prompt + "\n\n" + outline + "\n\nQuestions and Answers:\n"
+                    for qa in questions_and_answers["questions_and_answers"]:
+                        combined_message += f"Q: {qa['question']}\nA: {qa['answer']}\n"
+
+                    combined_message_tokens_response = gemini_model.count_tokens(combined_message)
+                    combined_message_tokens = combined_message_tokens_response.total_tokens
+
+                    console.print(f"Combined Message Tokens: {combined_message_tokens}", style="bold yellow")
+
+                    if combined_message_tokens < (TOKEN_LIMIT - TOKEN_BUFFER):
+                        writer_chat = process_writer_agent(gemini_model, combined_message)  
+
+                        console.print("Writer Agent Response:", style="bold magenta")
+                        pretty_print(writer_chat.text)
+                    else:
+                        console.print("Token limit exceeded. Sending final message and terminating.", style="bold red")
+
+                        writer_chat = process_writer_agent(gemini_model, combined_message)
+
+                        console.print("Writer Agent Response:", style="bold magenta")
+                        #pretty_print(writer_chat.text)
+                        return writer_chat.text, combined_message
+                        #break
+
+            except Exception as e:
+                console.print("An unexpected error occurred in the workflow:", style="bold red")
+                console.print(f"Error Details: {str(e)}", style="bold red")
 
         except Exception as e:
             console.print("An unexpected error occurred in the workflow:", style="bold red")

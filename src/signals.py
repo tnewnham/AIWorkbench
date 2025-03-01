@@ -10,5 +10,10 @@ class GlobalSignals(QObject):
     # Emits: dict of function arguments
     analysis_request = pyqtSignal(dict)
 
-# Create a singleton instance
+    # Signals for inter-component communication
+    refresh_signal = pyqtSignal()
+    progress_signal = pyqtSignal(str, int)  # message, percentage
+    set_assistant_signal = pyqtSignal(str)  # assistant_id
+
+# Create a global instance
 global_signals = GlobalSignals() 
