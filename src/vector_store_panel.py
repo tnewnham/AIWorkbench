@@ -7,8 +7,17 @@ import os
 import sys
 import json
 import time
+import logging
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename='vector_store_panel.log',
+    filemode='w'
+)
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit,
@@ -225,7 +234,7 @@ class VectorStorePanel(QWidget):
         # Files table
         self.vs_files_table = QTableWidget()
         self.vs_files_table.setColumnCount(4)
-        self.vs_files_table.setHorizontalHeaderLabels(["ID", "Created", "Status", "Filename"])
+        self.vs_files_table.setHorizontalHeaderLabels(["Filename", "Created", "Status", "File Size"])
         self.vs_files_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.vs_files_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.vs_files_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -495,11 +504,69 @@ class VectorStorePanel(QWidget):
         self.vs_files_table.setItem(0, 2, QTableWidgetItem(""))
         self.vs_files_table.setItem(0, 3, QTableWidgetItem(""))
         
-        # Create a worker to fetch the files
-        worker = self._create_worker(self.storage_manager.list_vector_store_files, store_data['id'])
+        # Create a worker to fetch both vector store files and general files
+        worker = self._create_worker(self._fetch_and_join_files, store_data['id'])
         worker.signals.result.connect(self._on_vector_store_files_loaded)
         worker.signals.error.connect(self._show_error)
         worker.start()
+    
+    def _fetch_and_join_files(self, vector_store_id):
+        """Fetch vector store files and join with general files to get filenames"""
+        
+        # Get vector store files
+        vector_store_files = self.storage_manager.list_vector_store_files(vector_store_id)
+        print(f"Vector store files response type: {type(vector_store_files)}")
+        if hasattr(vector_store_files, 'data'):
+            print(f"Vector store files count: {len(vector_store_files.data)}")
+            if vector_store_files.data:
+                first_file = vector_store_files.data[0]
+                print(f"First vector store file type: {type(first_file)}")
+                print(f"First vector store file ID: {first_file.id}")
+        
+        # Get all files (which include filenames)
+        all_files = self.storage_manager.list_files()
+        print(f"All files response type: {type(all_files)}")
+        if 'data' in all_files:
+            print(f"All files count: {len(all_files['data'])}")
+            if all_files['data']:
+                first_file = all_files['data'][0]
+                print(f"First all files type: {type(first_file)}")
+                if isinstance(first_file, dict):
+                    print(f"First all files keys: {first_file.keys()}")
+                    print(f"First all files ID: {first_file.get('id', 'N/A')}")
+                    print(f"First all files filename: {first_file.get('filename', 'N/A')}")
+                    print(f"First all files bytes: {first_file.get('bytes', 'N/A')}")
+        
+        # Create a lookup dictionary for filenames and file sizes by file ID
+        file_info_lookup = {}
+        if all_files and 'data' in all_files:
+            for file_data in all_files['data']:
+                if 'id' in file_data:
+                    file_info = {
+                        'filename': file_data.get('filename', ''),
+                        'bytes': file_data.get('bytes', 0)  # Get file size in bytes
+                    }
+                    file_info_lookup[file_data['id']] = file_info
+        
+        print(f"Created file info lookup with {len(file_info_lookup)} entries")
+        
+        # Add filename and bytes to vector store files
+        if vector_store_files and hasattr(vector_store_files, 'data'):
+            for file in vector_store_files.data:
+                if hasattr(file, 'id') and file.id in file_info_lookup:
+                    # Add filename and bytes attributes to the file object
+                    file_info = file_info_lookup[file.id]
+                    file.filename = file_info['filename']
+                    file.bytes = file_info['bytes']
+                    print(f"Set filename '{file.filename}' and size {file.bytes} bytes for file ID {file.id}")
+                else:
+                    # For files that don't have a match in the general files list
+                    # Try to get any existing filename or use a placeholder
+                    file.filename = getattr(file, 'filename', f"Unknown file ({file.id[:8]}...)")
+                    file.bytes = getattr(file, 'bytes', 0)
+                    print(f"No match found for file ID {file.id}, using placeholder")
+        
+        return vector_store_files
     
     def _on_vector_store_files_loaded(self, files_data):
         """Handle loaded vector store files data"""
@@ -512,33 +579,56 @@ class VectorStorePanel(QWidget):
         self.vs_files_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.vs_files_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         
-        # Update column headers
+        # Update column headers - Change order to [Filename, Created, Status, File Size]
         self.vs_files_table.setColumnCount(4)
-        self.vs_files_table.setHorizontalHeaderLabels(["ID", "Created", "Status", "Filename"])
+        self.vs_files_table.setHorizontalHeaderLabels(["Filename", "Created", "Status", "File Size"])
         
         # Add the files to the table
         self.vs_files_table.setRowCount(len(files_data.data))
         for row, file in enumerate(files_data.data):
-            # ID
-            id_item = QTableWidgetItem(file.id)
+            # Store file ID as user data but don't show it as a column
+            id_item = QTableWidgetItem(getattr(file, 'filename', ''))
             id_item.setData(Qt.UserRole, file)
+            
+            # Filename - now first column
             self.vs_files_table.setItem(row, 0, id_item)
             
-            # Created
+            # Created - now second column
             created_time = datetime.fromtimestamp(file.created_at)
             created_str = created_time.strftime("%Y-%m-%d %H:%M:%S")
             self.vs_files_table.setItem(row, 1, QTableWidgetItem(created_str))
             
-            # Status
+            # Status - now third column
             status = getattr(file, 'status', 'unknown')
             self.vs_files_table.setItem(row, 2, QTableWidgetItem(status))
             
-            # Filename - if available
-            filename = getattr(file, 'filename', '')
-            self.vs_files_table.setItem(row, 3, QTableWidgetItem(filename))
+            # File Size - now fourth column
+            file_size_bytes = getattr(file, 'bytes', 0)
+            file_size_str = self._format_file_size(file_size_bytes)
+            self.vs_files_table.setItem(row, 3, QTableWidgetItem(file_size_str))
         
         # Resize columns to fit content
         self.vs_files_table.resizeColumnsToContents()
+    
+    def _format_file_size(self, size_bytes):
+        """Format file size in bytes to a human-readable string"""
+        if size_bytes == 0:
+            return "0 B"
+        
+        # Define size units and their thresholds
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        i = 0
+        
+        # Convert to appropriate unit
+        while size_bytes >= 1024 and i < len(units) - 1:
+            size_bytes /= 1024.0
+            i += 1
+        
+        # Format with 2 decimal places if needed
+        if i > 0:
+            return f"{size_bytes:.2f} {units[i]}"
+        else:
+            return f"{size_bytes} {units[i]}"
     
     def show_create_vector_store_dialog(self):
         """Show dialog to create a new vector store"""
