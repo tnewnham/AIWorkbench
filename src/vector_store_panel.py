@@ -82,6 +82,9 @@ class Worker(QThread):
 class VectorStorePanel(QWidget):
     """Vector Store Management Panel"""
     
+    # Class variable to track the currently connected vector store
+    connected_vector_store_id = None
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         
@@ -143,35 +146,52 @@ class VectorStorePanel(QWidget):
     
     def init_ui(self):
         """Initialize the UI components"""
+        # Main layout
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(10, 10, 10, 10)
         
-        # Create tabs for different operations
+        # Ensure parent widget has correct color
+        self.setStyleSheet(f"background-color: {VSCodeStyleHelper.BG_COLOR};")
+        
+        # Create tabs with proper styling
         self.tabs = QTabWidget()
+        self.tabs.setObjectName("vectorStoreTabs")  # Ensure the object name is set
+        
+        # Apply VSCode-style tab styling
         self.tabs.setStyleSheet(f"""
-            QTabWidget::pane {{ 
-                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR}; 
-                border-radius: {VSCodeStyleHelper.LARGE_RADIUS}; 
+            QTabWidget#vectorStoreTabs::pane {{
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                background-color: {VSCodeStyleHelper.BG_COLOR}; /* Match AssistantsPanel */
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                border-top: none;
+                top: -2px;
+                position: absolute;
             }}
-            QTabBar::tab {{ 
-                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+
+            QTabBar::tab {{
+                background-color: {VSCodeStyleHelper.BG_COLOR}; /* Match AssistantsPanel */
                 color: {VSCodeStyleHelper.TEXT_COLOR};
                 border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
                 border-bottom-color: {VSCodeStyleHelper.BORDER_COLOR};
+                padding: 5px 10px;
                 border-top-left-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
                 border-top-right-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
                 min-width: 8ex;
-                padding: 5px 10px;
+                margin-right: 2px;
             }}
-            QTabBar::tab:selected {{ 
-                background-color: {VSCodeStyleHelper.BG_COLOR};
+            QTabBar::tab:selected {{
+                background-color: {VSCodeStyleHelper.BG_COLOR};  /* Active tab background */
                 border-bottom-color: {VSCodeStyleHelper.BG_COLOR};
             }}
-            QTabBar::tab:!selected {{ 
+            QTabBar::tab:!selected {{
                 margin-top: 2px;
+            }}
+            QTabBar::tab:hover:!selected {{
+                background-color: #3E3E42;
             }}
         """)
         
-        # Create tabs
+        # Create the tabs
         self.vector_stores_tab = self.create_vector_stores_tab()
         self.files_tab = self.create_files_tab()
         self.upload_tab = self.create_upload_tab()
@@ -186,6 +206,9 @@ class VectorStorePanel(QWidget):
         # Initialize data
         self.refresh_vector_stores()
         self.refresh_files()
+        
+        # Check for connected vector store
+        self._check_connected_vector_store()
     
     def create_vector_stores_tab(self):
         """Create the Vector Stores tab"""
@@ -261,7 +284,10 @@ class VectorStorePanel(QWidget):
         self.create_vs_btn.clicked.connect(self.show_create_vector_store_dialog)
         self.delete_vs_btn = QPushButton("Delete Selected")
         self.delete_vs_btn.clicked.connect(self.delete_selected_vector_store)
-        self.analyze_vs_btn = QPushButton("Analyze Files")
+        
+        # Set the analyze button text based on whether there's a connected vector store
+        button_text = "Manage Connection" if VectorStorePanel.connected_vector_store_id else "Connect to Chat"
+        self.analyze_vs_btn = QPushButton(button_text)
         self.analyze_vs_btn.clicked.connect(self.analyze_vector_store_files)
         
         operations_layout.addWidget(self.refresh_vs_btn)
@@ -1022,6 +1048,13 @@ class VectorStorePanel(QWidget):
         worker.signals.result.connect(self._on_vector_stores_loaded)
         worker.signals.error.connect(self._show_error)
         worker.start()
+        
+        # Update the analyze button text based on connection status
+        if hasattr(self, 'analyze_vs_btn'):
+            if VectorStorePanel.connected_vector_store_id:
+                self.analyze_vs_btn.setText("Manage Connection")
+            else:
+                self.analyze_vs_btn.setText("Connect to Chat")
     
     def _on_vector_stores_loaded(self, stores_data):
         """Process vector stores data and update the UI"""
@@ -1052,6 +1085,9 @@ class VectorStorePanel(QWidget):
             files_count_item = QTableWidgetItem(str(files_count))
             files_count_item.setFlags(files_count_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
             self.vs_list.setItem(row, 3, files_count_item)
+        
+        # Update the highlighting for the connected vector store
+        self._update_connected_vector_store_highlight()
     
     def on_vector_store_selected(self):
         """Handle vector store selection"""
@@ -2122,7 +2158,7 @@ class VectorStorePanel(QWidget):
         super().closeEvent(event)
 
     def analyze_vector_store_files(self):
-        """Analyze files in the selected vector store"""
+        """Analyze files in the selected vector store by attaching it to the main assistant chat thread"""
         selected_items = self.vs_list.selectedItems()
         if not selected_items:
             QMessageBox.warning(self, "Error", "Please select a vector store first.")
@@ -2132,16 +2168,179 @@ class VectorStorePanel(QWidget):
         if not store_data:
             return
         
-        # Get the files from this vector store
-        # This will need to be implemented in the OpenAIStorageManager class
-        # to download the files from the vector store
+        vector_store_id = store_data.get('id')
+        if not vector_store_id:
+            QMessageBox.warning(self, "Error", "Could not retrieve vector store ID.")
+            return
         
-        # For now, show a dialog explaining this feature is coming soon
-        QMessageBox.information(
-            self,
-            "Coming Soon",
-            "Direct analysis of vector store files will be available in a future update."
+        # Check if we're attaching or detaching
+        is_detaching = (vector_store_id == VectorStorePanel.connected_vector_store_id)
+        
+        # Show a confirmation dialog with vector store details
+        if is_detaching:
+            confirm_message = f"This will disconnect the current vector store from the assistant.\n\n"
+            confirm_message += f"Vector Store: {store_data.get('name', 'Unnamed')}\n"
+            confirm_message += f"ID: {vector_store_id}"
+            
+            dialog_title = "Disconnect Vector Store"
+            button_text = "Disconnect"
+        else:
+            confirm_message = f"This will set the selected vector store as the search context for the main assistant.\n\n"
+            confirm_message += f"Vector Store: {store_data.get('name', 'Unnamed')}\n"
+            confirm_message += f"ID: {vector_store_id}\n"
+            confirm_message += f"Files: {store_data.get('file_counts', {}).get('total', 0)} total"
+            
+            dialog_title = "Connect Vector Store"
+            button_text = "Connect"
+        
+        # Create custom confirmation dialog
+        confirm_dialog = QMessageBox(self)
+        confirm_dialog.setWindowTitle(dialog_title)
+        confirm_dialog.setText(confirm_message)
+        confirm_dialog.setIcon(QMessageBox.Question)
+        
+        # Create custom buttons
+        yes_button = confirm_dialog.addButton(button_text, QMessageBox.YesRole)
+        no_button = confirm_dialog.addButton("Cancel", QMessageBox.NoRole)
+        confirm_dialog.setDefaultButton(no_button)
+        
+        confirm_dialog.exec_()
+        
+        # If user clicked Cancel, exit
+        if confirm_dialog.clickedButton() != yes_button:
+            return
+        
+        # Show progress dialog
+        progress = QProgressDialog(
+            "Updating assistant thread...", 
+            "Cancel", 
+            0, 100, 
+            self
         )
+        progress.setWindowTitle("Updating Thread")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setValue(10)
+        progress.show()
+        
+        # Create a worker to modify the thread
+        def update_thread_worker():
+            try:
+                # Get the current thread ID from the Chat UI
+                from src.openai_assistant import ClientConfig
+                from openai import OpenAI
+                
+                # Create OpenAI client
+                client = OpenAI(api_key=ClientConfig.OPENAI_API_KEY)
+                
+                # Find the main thread ID - assuming it's stored in ClientConfig or we can retrieve it
+                # This should be the thread used in the main chat interface
+                from src.chat_ui_qt import ChatTab
+                
+                # First, get all available thread IDs from the OpenAI API
+                thread_id = None
+                
+                # Attempt to get the thread ID from the current chat tab instance
+                app = QApplication.instance()
+                if app:
+                    for widget in app.topLevelWidgets():
+                        if isinstance(widget, QMainWindow):
+                            for child in widget.findChildren(ChatTab):
+                                if hasattr(child, 'chat_thread') and child.chat_thread:
+                                    thread_id = child.chat_thread.id
+                                    break
+                
+                if not thread_id:
+                    raise Exception("Could not find the main assistant chat thread")
+                
+                progress.setValue(30)
+                
+                # Modify the thread to update its tool resources for file_search
+                if is_detaching:
+                    # Detach by setting empty vector_store_ids array
+                    response = client.beta.threads.update(
+                        thread_id=thread_id,
+                        tool_resources={
+                            "file_search": {
+                                "vector_store_ids": []
+                            }
+                        }
+                    )
+                else:
+                    # Attach the selected vector store
+                    response = client.beta.threads.update(
+                        thread_id=thread_id,
+                        tool_resources={
+                            "file_search": {
+                                "vector_store_ids": [vector_store_id]
+                            }
+                        }
+                    )
+                
+                progress.setValue(70)
+                
+                # Verify the response
+                if response and hasattr(response, "id"):
+                    # Update the connected vector store ID
+                    if is_detaching:
+                        VectorStorePanel.connected_vector_store_id = None
+                    else:
+                        VectorStorePanel.connected_vector_store_id = vector_store_id
+                        
+                    return {
+                        "success": True,
+                        "thread_id": thread_id,
+                        "vector_store_id": vector_store_id,
+                        "vector_store_name": store_data.get('name', 'Unnamed'),
+                        "action": "disconnected" if is_detaching else "connected"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": "Thread update response was invalid"
+                    }
+                    
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
+        
+        worker = self._create_worker(update_thread_worker)
+        
+        def on_worker_done(result):
+            progress.setValue(100)
+            progress.close()
+            
+            if result and result.get("success"):
+                # Update the UI to reflect the connection state
+                self._update_connected_vector_store_highlight()
+                
+                # Update the button text
+                if result.get("action") == "disconnected":
+                    self.analyze_vs_btn.setText("Connect to Chat")
+                    message = f"Vector store '{result.get('vector_store_name')}' has been disconnected from the assistant."
+                else:
+                    self.analyze_vs_btn.setText("Manage Connection")
+                    message = f"Vector store '{result.get('vector_store_name')}' has been set as the file search context for the assistant."
+                
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    message
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to update thread: {result.get('error', 'Unknown error')}"
+                )
+        
+        worker.signals.result.connect(on_worker_done)
+        worker.signals.error.connect(lambda e: (
+            progress.close(),
+            QMessageBox.critical(self, "Error", f"Failed to update thread: {str(e)}")
+        ))
+        worker.start()
 
     def _filter_vector_stores(self):
         """Filter the vector stores list based on search text and date filter"""
@@ -2257,7 +2456,10 @@ class VectorStorePanel(QWidget):
         for row in selected_rows:
             id_item = self.vs_files_table.item(row, 0)
             if id_item:
-                file_ids.append(id_item.text())
+                # Get the file object from user data and extract the actual file ID
+                file_obj = id_item.data(Qt.UserRole)
+                if file_obj and hasattr(file_obj, 'id'):
+                    file_ids.append(file_obj.id)  # Use the file ID instead of the text (filename)
         
         # Confirm deletion
         confirm_dialog = QMessageBox(
@@ -2388,3 +2590,108 @@ class VectorStorePanel(QWidget):
                 f"Failed to initialize the OpenAI storage manager: {str(e)}\n\n"
                 f"Please check your OpenAI API key and connectivity."
             )
+
+    def _update_connected_vector_store_highlight(self):
+        """Update highlighting to show the connected vector store"""
+        # Get the highlight color
+        highlight_color = VSCodeStyleHelper.ACCENT_COLOR
+        background_color = VSCodeStyleHelper.BG_COLOR
+        
+        # Loop through all rows to apply or remove highlighting
+        for row in range(self.vs_list.rowCount()):
+            id_item = self.vs_list.item(row, 0)
+            if not id_item:
+                continue
+            
+            store_data = id_item.data(Qt.UserRole)
+            if not store_data:
+                continue
+            
+            # Check if this is the connected vector store
+            store_id = store_data.get('id')
+            is_connected = (store_id == VectorStorePanel.connected_vector_store_id)
+            
+            # Apply highlighting to all cells in the row
+            for col in range(self.vs_list.columnCount()):
+                item = self.vs_list.item(row, col)
+                if item:
+                    if is_connected:
+                        # Apply connected state highlighting
+                        item.setBackground(QColor(highlight_color))
+                        item.setForeground(QColor("white"))  # Set text to white for better visibility
+                        # Add a connected indicator to the name (column 1)
+                        if col == 1:  # Name column
+                            current_name = item.text()
+                            if not current_name.endswith(" [Connected]"):
+                                item.setText(f"{current_name} [Connected]")
+                    else:
+                        # Reset to default state
+                        item.setBackground(QColor(background_color))
+                        item.setForeground(QColor(VSCodeStyleHelper.TEXT_COLOR))
+                        # Remove connected indicator from name if present
+                        if col == 1:  # Name column
+                            current_name = item.text()
+                            if current_name.endswith(" [Connected]"):
+                                item.setText(current_name.replace(" [Connected]", ""))
+
+    def _check_connected_vector_store(self):
+        """Check if there's a vector store connected to the main chat thread"""
+        # Create a worker to check for connected vector store
+        def check_worker():
+            try:
+                # Get the current thread ID from the Chat UI
+                from src.openai_assistant import ClientConfig
+                from openai import OpenAI
+                
+                # Create OpenAI client
+                client = OpenAI(api_key=ClientConfig.OPENAI_API_KEY)
+                
+                # Find the main thread ID
+                from src.chat_ui_qt import ChatTab
+                
+                thread_id = None
+                
+                # Attempt to get the thread ID from the current chat tab instance
+                app = QApplication.instance()
+                if app:
+                    for widget in app.topLevelWidgets():
+                        if isinstance(widget, QMainWindow):
+                            for child in widget.findChildren(ChatTab):
+                                if hasattr(child, 'chat_thread') and child.chat_thread:
+                                    thread_id = child.chat_thread.id
+                                    break
+                
+                if not thread_id:
+                    return {"success": False, "error": "Could not find the main assistant chat thread"}
+                
+                # Get thread data
+                thread = client.beta.threads.retrieve(thread_id)
+                
+                # Check if the thread has file_search tool resources with vector_store_ids
+                if (hasattr(thread, 'tool_resources') and 
+                    thread.tool_resources and 
+                    'file_search' in thread.tool_resources and 
+                    'vector_store_ids' in thread.tool_resources['file_search'] and 
+                    thread.tool_resources['file_search']['vector_store_ids']):
+                    
+                    # Get the first vector store ID (assuming there's only one connected)
+                    vector_store_id = thread.tool_resources['file_search']['vector_store_ids'][0]
+                    return {"success": True, "vector_store_id": vector_store_id}
+                
+                return {"success": True, "vector_store_id": None}
+                    
+            except Exception as e:
+                print(f"Error checking connected vector store: {str(e)}")
+                return {"success": False, "error": str(e)}
+        
+        worker = self._create_worker(check_worker)
+        
+        def on_check_done(result):
+            if result and result.get("success") and result.get("vector_store_id"):
+                # Update the connected vector store ID
+                VectorStorePanel.connected_vector_store_id = result.get("vector_store_id")
+                # Update the UI to reflect the connection state
+                self._update_connected_vector_store_highlight()
+        
+        worker.signals.result.connect(on_check_done)
+        worker.start()
