@@ -90,9 +90,8 @@ class AssistantsPanel(QWidget):
         title_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
         title_layout.addWidget(title_label)
         
-        refresh_button = QPushButton("Refresh")
-        refresh_button.clicked.connect(self.refresh_assistants)
-        title_layout.addWidget(refresh_button)
+        # Remove refresh button
+        title_layout.addStretch(1)  # Add stretch to push title to the left
         
         main_layout.addLayout(title_layout)
         

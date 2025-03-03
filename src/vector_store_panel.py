@@ -279,7 +279,7 @@ class VectorStorePanel(QWidget):
         self.vs_list.setColumnCount(4)
         self.vs_list.setHorizontalHeaderLabels(["ID", "Name", "Created", "Files"])
         # Set fixed column widths
-        self.vs_list.setColumnWidth(0, 180)  # ID column (was 220)
+        self.vs_list.setColumnWidth(0, 170)  # ID column (was 220)
         self.vs_list.setColumnWidth(1, 183)  # Name column (was 250)
         self.vs_list.setColumnWidth(2, 115)  # Created column (was 180)
         self.vs_list.setColumnWidth(3, 50)   # Files count column (was 100)
@@ -683,7 +683,7 @@ class VectorStorePanel(QWidget):
                 color: {VSCodeStyleHelper.TEXT_COLOR};
                 padding: 5px;
                 border: none;  /* Keep borders hidden */
-                height: 10px;  /* Consistent with other tables */
+                height: 15px;  /* Consistent with other tables */
             }}
             QScrollBar:vertical {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
