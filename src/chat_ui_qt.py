@@ -475,7 +475,7 @@ class SidePanel(QWidget):
         # Button widget container
         button_widget = QWidget()
         button_widget.setLayout(self.button_layout)
-        button_widget.setFixedWidth(120)  # Make wider to accommodate "Vector Stores" text
+        button_widget.setFixedWidth(120)  
         button_widget.setStyleSheet(f"""
             background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
             border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
@@ -517,9 +517,9 @@ class SidePanel(QWidget):
         )
         
         # Add default pages
-        self.add_page("Settings", f"{position} Settings Panel")
-        self.add_page("History", f"{position} History Panel")
-        self.add_page("Help", f"{position} Help Panel")
+        # self.add_page("Settings", f"{position} Settings Panel")
+        # self.add_page("History", f"{position} History Panel")
+        # self.add_page("Help", f"{position} Help Panel")
         
         # Select first button by default
         if self.button_layout.count() > 0:

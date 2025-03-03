@@ -215,6 +215,7 @@ class ClientConfig:
     # They will be set programmatically from assistant_config.py
 
     LEAD_ASSISTANT_ID = None
+    STYLE_PROFILER_AGENT_ID = None
     
     # Set debug mode and polling interval based on environment
     DEBUG_MODE = ENVIRONMENT == "development"
