@@ -207,17 +207,6 @@ class VSCodeStyleHelper:
             }}
         """)
 
-        # === Remove or comment out the lines below ===
-        # app.setStyleSheet(app.styleSheet() + f"""
-        #     /* GLOBAL OVERRIDE FOR QTabWidget PANE */
-        #     QTabWidget::pane {{
-        #         border: none !important;
-        #         border-top: none !important;
-        #         top: -2px;
-        #         background-color: {VSCodeStyleHelper.BG_COLOR};
-        #     }}
-        # """)
-        
 # Import the necessary components from the existing code
 from src.openai_assistant import (
     initialize_chat,
@@ -237,6 +226,19 @@ class SignalHandler(QObject):
     """Signal handler for thread communication"""
     message_signal = pyqtSignal(str, str, object)
     enable_input_signal = pyqtSignal()
+
+#############################
+# HIGHLIGHT CODE BLOCKS
+#############################
+def highlight_with_fenced_code(content: str) -> str:
+    """
+    Converts markdown (including fenced code blocks) into HTML with
+    code-friendly extras to properly handle syntax blocks.
+    """
+    return markdown2.markdown(
+        content,
+        extras=["fenced-code-blocks", "code-friendly"]
+    )
 
 class MessageWidget(QFrame):
     """Widget to display a chat message with appropriate styling based on role"""
@@ -329,10 +331,10 @@ class MessageWidget(QFrame):
             layout.addWidget(content_widget)
             
         except json.JSONDecodeError:
-            # Check for markdown
+            # Check for markdown (including code blocks)
             if "```" in content or "#" in content or "*" in content:
-                # Convert markdown to HTML
-                html_content = markdown2.markdown(content)
+                # Use our new highlight function to include code fences
+                html_content = highlight_with_fenced_code(content)
                 
                 content_widget = QTextEdit()
                 content_widget.setReadOnly(True)
@@ -475,7 +477,7 @@ class SidePanel(QWidget):
         # Button widget container
         button_widget = QWidget()
         button_widget.setLayout(self.button_layout)
-        button_widget.setFixedWidth(120)  
+        button_widget.setFixedWidth(120)  # Make wider to accommodate "Vector Stores" text
         button_widget.setStyleSheet(f"""
             background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
             border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
@@ -517,9 +519,9 @@ class SidePanel(QWidget):
         )
         
         # Add default pages
-        # self.add_page("Settings", f"{position} Settings Panel")
-        # self.add_page("History", f"{position} History Panel")
-        # self.add_page("Help", f"{position} Help Panel")
+        self.add_page("Settings", f"{position} Settings Panel")
+        self.add_page("History", f"{position} History Panel")
+        self.add_page("Help", f"{position} Help Panel")
         
         # Select first button by default
         if self.button_layout.count() > 0:

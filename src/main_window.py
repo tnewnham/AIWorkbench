@@ -45,13 +45,13 @@ class MainWindow(QMainWindow):
                 width: 8px !important;
                 margin: 0px !important;
                 border: none !important;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS} !important;
             }}
             QScrollBar::handle:vertical {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR} !important;
                 min-height: 30px !important;
                 border: none !important;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS} !important;
             }}
             QScrollBar::handle:vertical:hover {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR} !important;
@@ -145,13 +145,13 @@ class MainWindow(QMainWindow):
                 width: 8px !important;
                 margin: 0px !important;
                 border: none !important;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS} !important;
             }}
             QScrollBar::handle:vertical {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR} !important;
                 min-height: 30px !important;
                 border: none !important;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS} !important;
             }}
             QScrollBar::handle:vertical:hover {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR} !important;
@@ -170,13 +170,13 @@ class MainWindow(QMainWindow):
                 height: 8px !important;
                 margin: 0px !important;
                 border: none !important;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS} !important;
             }}
             QScrollBar::handle:horizontal {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR} !important;
                 min-width: 30px !important;
                 border: none !important;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS} !important;
             }}
             QScrollBar::handle:horizontal:hover {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR} !important;

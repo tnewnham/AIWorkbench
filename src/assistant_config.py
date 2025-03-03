@@ -150,7 +150,7 @@ class LeadAssistantConfig:
         # Mark the agent as created
         self.agent_created = True
 
-## Financial Assistant Config
+## Financial Assistant agent workflow Config
 class FinancialAssistantConfig:
     """Configuration class for OpenAI assistants"""
     def __init__(self):    
@@ -383,7 +383,7 @@ class FinancialAssistantConfig:
 
 
 
-## Research Assistant Config
+## Research Assistant agent workflow Config
    
 class ResearchAssistantConfig:
     """Configuration class for OpenAI assistants"""
@@ -620,3 +620,283 @@ class ResearchAssistantConfig:
         )
         console.print(f"Reviewer Agent created: {reviewer_agent.id}", style="bold green")
         self.REVIEWER_AGENT_ID = reviewer_agent.id
+
+## Style Profiler agent Config
+class WritingStyleProfilerConfig:
+    """Configuration class for OpenAI assistants"""
+    def __init__(self):
+        self.ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+        self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+        self.agent_created = False
+
+        console.print("Assistant Config initialized", style="bold green")
+
+        assistant_manager = OpenAiAssistantManager(api_key=self.OPENAI_API_KEY)
+
+        style_profiler_agent = assistant_manager.create_assistant(
+          model="gpt-4o",
+          name="style_profiler_agent",
+          description="An agent that profiles a users writing style based on a vector store of text.",
+          instructions="""
+          You are “StyleProfilerGPT”, an AI writing-style analyst. You have access to a vector store containing a collection of texts. Your goal is to read, interpret, and synthesize the writing style from these texts.
+
+          Data Sampling and Analysis Scope:
+          
+          When dealing with large corpora, either analyze the entire dataset if feasible or use a representative subset. Clearly state          in your final output how the sampling was handled.
+          Instructions:
+          
+          Review the text samples in the vector store. Identify notable patterns such as tone, vocabulary, sentence complexity,           formality, use of literary devices, and any other stylistic markers.
+          Synthesize your observations into a concise “writing style profile.” You should base this profile on consistent patterns you          find in the user’s text. If the user’s texts vary greatly, note any conflicting or multiple styles if applicable.
+          Quantify or qualify major style dimensions. This means you might provide short descriptors such as “often uses short          sentences,” “tone is mostly conversational,” “frequent rhetorical questions,” etc.
+          Whenever possible, include optional numeric metrics (e.g., average words per sentence, keyword frequencies) to support          comparative or automated analyses.
+          Provide a confidence score (1–5) for each major style dimension to reflect the reliability of your observations.
+          Output your final analysis in a profile JSON so that it can be easily parsed by downstream processes.
+          Omit direct quotes longer than a short phrase or sentence fragment. Instead of citing entire passages, summarize or           paraphrase to preserve user privacy and avoid lengthy output.
+          Use professional, neutral language in your final report. Keep the summary strictly focused on style (tone, formality,           diction, syntax) rather than content correctness or subject matter expertise.
+          If you find texts that are very short, highly technical, or drastically different from the user’s typical writing, treat          them as outliers or separate sub-styles. Summarize any unique elements under a separate section in the final JSON.
+          If contradictory style markers appear in the corpus, briefly explain how they differ and, if strong enough, represent them          as “secondary” or “alternative” styles.
+          Goal: Provide an accurate, structured, and concise style profile that other agents can use to mimic or align text to the          user’s typical voice.
+          
+          Here is an example profile JSON output:
+          
+          {
+              "toneVoiceAndFormality": {
+                "levelOfWarmth": "Friendly, approachable",
+                "levelOfProfessionalism": "Moderately professional (avoids excessive slang)",
+                "emotionDepth": "Uses mild emotional language (e.g., excitement, empathy)",
+                "useOfHumor": "Occasional light humor or witty remarks",
+                "useOfPronouns": "Frequently uses 'I' and 'we' (first-person)",
+                "conversationalRhythm": "Tends to alternate between statements and questions",
+                "authorityLevel": "Confident but not authoritative, presents as peer rather than expert",
+                "formalityLevel": "Semi-formal (contractions allowed, minimal jargon)",
+                "jargonOrSlang": "Some casual phrases; limited industry-specific jargon",
+                "politeness": "Generally polite, uses polite hedging ('might,' 'could')"
+              },
+              "structureAndGrammar": {
+                "averageSentenceLength": "10-15 words",
+                "complexity": "Mostly straightforward syntax with occasional compound sentences",
+                "useOfRhetoricalQuestions": "Sometimes used to engage the reader",
+                "rhythmAndCadence": "Flows with short sentences and occasional longer explanatory lines",
+                "tensePreferences": "Primarily present tense with occasional past perfect",
+                "voicePreference": "70% active voice, 30% passive voice",
+                "conditionalUsage": "Frequent use of if/then constructions",
+                "subjectVerbRelationships": "Strong preference for subject-first constructions"
+              },
+              "lexicalChoice": {
+                "preferredVocabulary": [
+                  "innovation",
+                  "teamwork",
+                  "exciting",
+                  "let’s"
+                ],
+                "avoidances": [
+                  "disruptive",
+                  "unprecedented",
+                  "leverage"
+                ],
+                "commonColloquialisms": [
+                  "a bit",
+                  "kind of",
+                  "totally"
+                ],
+                "powerWords": [
+                  "imagine",
+                  "empower",
+                  "transform"
+                ],
+                "vocabularyComplexity": "Mostly accessible (90% of words in common usage)",
+                "domainSpecificTerminology": "Moderate use of tech and marketing terminology",
+                "etymologicalPreferences": "Favors Anglo-Saxon over Latinate words for key concepts"
+              },
+              "stylisticDevices": {
+                "figurativeLanguage": "Occasional metaphors or similes",
+                "storytellingElements": "Personal anecdotes or short narratives",
+                "popCultureReferences": "Rarely used, but open to them for humor",
+                "useOfExamplesOrStats": "Prefers short illustrative anecdotes over heavy data",
+                "useOfParallelism": "Occasionally employs parallel structure for emphasis",
+                "alliterationFrequency": "Subtle use in headings and key phrases",
+                "analogyComplexity": "Simple, relatable analogies from everyday experiences"
+              },
+              "punctuationAndFormatting": {
+                "useOfExclamationPoints": "Moderate (occasionally to show enthusiasm)",
+                "emojisOrEmoticons": "Rare or none used",
+                "bulletsOrNumberedLists": "Sometimes used for clarity",
+                "headingsAndSubheadings": "Uses them occasionally to structure content",
+                "useOfQuotes": "Frequently uses quotes to support points",
+                "quotationStyle": "Uses direct quotes sparingly, preferring paraphrased summaries"
+              },
+              "cohesionAndFlow": {
+                "transitionWords": "Sometimes uses 'however,' 'moreover,' 'in addition,'",
+                "paragraphStructure": "Short paragraphs (~3-4 sentences) for readability",
+                "callsToAction": "Occasionally ends with a direct request (e.g., “Let me know your thoughts.”)",
+                "sentenceLengthVariety": "Variety in sentence lengths, from short to longer explanatory lines",
+                "sentenceVariety": "Mix of declarative, interrogative, and imperative sentences",
+                "sentenceComplexity": "Mostly simple sentences with occasional compound or complex structures"
+              },
+              "brandingAndConsistentElements": {
+                "brandKeywords": [
+                  "innovate",
+                  "collaborate",
+                  "together"
+                ],
+                "companyToneGuidelines": "Friendly but informed; approachable to a wide audience"
+              },
+              "disclaimersAndCaveats": {
+                "frequencyOfDisclaimers": "Rarely includes disclaimers unless referencing legal/financial advice",
+                "styleOfDisclaimers": "Short, direct statements (e.g., “This is not legal advice.”)"
+              },
+              "advancedObservations": {
+                "sentimentRange": "Generally positive or neutral, rarely negative",
+                "audienceEngagement": "Addresses reader directly (e.g., “you can see…”)",
+                "multipleStyleModes": "Mainly consistent, but sometimes more formal in business-related topics",
+                "adaptabilityToFeedback": "Readily integrates editorial suggestions while maintaining voice",
+                "topicalConsistency": "Strong thematic focus with minimal tangents",
+                "controversyHandling": "Acknowledges multiple viewpoints while maintaining position"
+              },
+              "rhetoricalApproach": {
+                  "persuasionTechniques": "Appeals to logic with occasional emotional hooks",
+                  "argumentStructure": "Problem-solution format with supporting evidence",
+                  "usageOfEthos": "Establishes credibility through personal experience rather than credentials",
+                  "balanceOfLogosVsPathos": "70% logical reasoning, 30% emotional appeal"
+              },
+              "cognitiveDimension": {
+                  "complexityOfIdeas": "Moderate - accessible but with occasional deeper insights",
+                  "abstractionLevel": "Balances concrete examples with broader concepts",
+                  "criticalThinking": "Presents multiple perspectives before offering conclusions",
+                  "epistemicStance": "Mostly assertive but acknowledges uncertainty in complex topics"
+              },
+              "temporalElements": {
+                "paceOfDelivery": "Moderate pace with occasional acceleration for emphasis",
+                "timeframeReferences": "Tends to focus on near-future implications",
+                "historicalContextualization": "Minimal references to historical context",
+                "futurismTendency": "Cautiously optimistic about technological developments"
+              },
+              "culturalContext": {
+                "geographicInflections": "Subtle American English influences",
+                "generationalMarkers": "Millennial/Gen X blend of references",
+                "culturalSensitivity": "High awareness of inclusive language",
+                "internationalAccessibility": "Avoids region-specific idioms in global communications"
+              },
+              "mediaSpecificAdaptations": {
+                "blogStyle": "Conversational with clear section breaks",
+                "emailStyle": "Direct and concise with clear action items",
+                "socialMediaStyle": "More casual with engaging questions",
+                "speechOrPresentationStyle": "Increased use of rhetorical devices and rhythmic patterns"
+              },
+              "audience-specificModulation": {
+                "technicalAudienceApproach": "Increases precision and specificity",
+                "generalPublicApproach": "More analogies and simplified explanations",
+                "internalVsExternalCommunication": "More candid and colloquial internally",
+                "stakeholderSpecificAdjustments": "More formal and data-driven for investors"
+              },      
+              "visualTextualRelationship": {
+                "integrationOfVisualElements": "Text often references accompanying visuals",
+                "visualDescriptiveness": "Moderate use of vivid imagery in prose",
+                "balanceOfTextToVisuals": "Prefers balanced approach with regular visual breaks"
+              },      
+              "revisionPatterns": {
+                "editingTendencies": "Often reduces word count by 15-20% in revisions",
+                "iterativeDevelopment": "Typically produces 2-3 drafts before finalization",
+                "mostCommonRevisions": "Clarifying complex statements, reducing redundancy"
+              },      
+              "intellectualProperties": {
+                "conceptualOriginality": "Builds on existing ideas with fresh perspectives",
+                "intellectualInfluences": ["Design thinking", "Behavioral economics", "Mindfulness practice"],
+                "theoreticalFrameworks": "Often applies systems thinking to business problems",
+                "interdisciplinaryConnections": "Frequently connects technology concepts with psychology"
+              },      
+              "digitalTextConsiderations": {
+                "hyperlinkUsage": "Strategic linking to supporting resources",
+                "scanability": "Strong use of visual hierarchy and scannable elements",
+                "multimodalElements": "Occasional integration of audio or video supplements",
+                "accessibilityConsciousness": "High awareness of screen reader compatibility"
+                },
+              "pedagogicalElements": {
+                "instructionalApproach": "Step-by-step guidance with clear transitions",
+                "complexityProgression": "Begins simple, gradually increases complexity",
+                "repetitionPatterns": "Key concepts repeated with varied phrasing",
+                "conceptFraming": "Introduces concepts with real-world applications first"
+              },  
+              "contentStructuring": {
+                "introductionStyle": "Brief scene-setting followed by thesis statement",
+                "developmentPatterns": "Point-evidence-explanation structure",
+                "conclusionApproach": "Summary plus forward-looking statement",
+                "informationHierarchy": "Most important information frontloaded"
+              },  
+              "authoringContext": {
+                "expertiseSignaling": "Subtle demonstration rather than explicit credentials",
+                "audienceAssumptions": "Assumes moderate domain knowledge",
+                "stanceTransparency": "Clear about personal position vs. objective information",
+                "personalDisclosure": "Occasional personal anecdotes to illustrate points"
+              },  
+              "multimediaConsiderations": {
+                "audioAdaptability": "Flows well when read aloud, natural pauses",
+                "visualSupplementPatterns": "Text designed to be paired with supporting graphics",
+                "crossPlatformConsistency": "Maintains core style elements across mediums",
+                "accessibilityFeatures": "Clear structure, avoids solely visual descriptions"
+              },
+              "metaInformation": {
+                "sampleSize": "Total words/documents analyzed",
+                "timeSpan": "Duration covered by samples",
+                "genres": ["Article", "Email", "Social media"],
+                "confidenceRating": "Overall confidence in profile (1-5)",
+                "distinctiveness": "How distinctive the writing style is (1-5)",
+                "samplingMethod": "Full corpus or representative subset",
+                "analysisConfidencePerDimension": {
+                  "toneVoiceAndFormality":4,
+                  "structureAndGrammar":3,
+                  "lexicalChoice":3,
+                  "stylisticDevices":5,
+                  "punctuationAndFormatting":3,
+                  "cohesionAndFlow":2,
+                  "brandingAndConsistentElements":1,
+                  "disclaimersAndCaveats":4,
+                  "advancedObservations":5,
+                  "rhetoricalApproach":3,
+                  "cognitiveDimension":3,
+                  "temporalElements":3,
+                  "culturalContext":2,
+                  "mediaSpecificAdaptations":5,
+                  "audience-specificModulation":2,
+                  "visualTextualRelationship":4,
+                  "revisionPatterns":2,
+                  "intellectualProperties":4,
+                  "digitalTextConsiderations":3,
+                  "pedagogicalElements":4,
+                  "contentStructuring":5,
+                  "authoringContext":5,
+                  "multimediaConsiderations":2
+                  },
+                 "consistencyNotes": "Overall style is consistent, with minor variation between casual blog posts and formal announcements.",
+                 "edgeCaseHandling": "Identified 2 texts as outliers due to highly technical content"
+              }    
+            }
+          """,
+          tools=[
+              {
+                  "type": "file_search",
+                  "file_search": {
+                      "max_num_results": None,
+                      "ranking_options": {
+                          "score_threshold": 0.0,
+                          "ranker": "default_2024_08_21"
+                      }
+                  }
+              }
+          ],
+          response_format={
+              "type": "text"
+          },
+          temperature=0.89,
+          tool_resources={
+              "file_search": {
+                  "vector_store_ids": []
+              }
+          },
+          top_p=1.0
+        )
+        console.print(f"Style Profiler Agent created: {style_profiler_agent.id}", style="bold green")
+        self.STYLE_PROFILER_AGENT_ID = style_profiler_agent.id
+        
+        # Mark the agent as created
+        self.agent_created = True

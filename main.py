@@ -39,15 +39,18 @@ def main():
     # Initialize lead assistant config
     try:
         from src.assistant_config import LeadAssistantConfig
+        from src.assistant_config import WritingStyleProfilerConfig
         from src.openai_assistant import ClientConfig
         
         lead_assistant_config = LeadAssistantConfig()
+        style_profiler_config = WritingStyleProfilerConfig()
         # Set the lead assistant ID in the ClientConfig
         ClientConfig.LEAD_ASSISTANT_ID = lead_assistant_config.LEAD_ASSISTANT_ID
+        ClientConfig.STYLE_PROFILER_AGENT_ID = style_profiler_config.STYLE_PROFILER_AGENT_ID
         # Load other configuration settings
         ClientConfig.load_config()
     except Exception as e:
-        console.print(f"Warning: Failed to initialize Lead Assistant: {e}", style="bold yellow")
+        console.print(f"Warning: Failed to initialize Assistants: {e}", style="bold yellow")
     
     if args.terminal:
         # Use terminal interface
@@ -91,15 +94,21 @@ def main():
                 window.setWindowIcon(icon)
             
             # Show the window
-            window.show()
+            window.show()    
             
             # Start the application
             sys.exit(app.exec_())
+
+        
         except ImportError as e:
             console.print(f"Error loading GUI: {e}", style="bold red")
             console.print("Falling back to terminal interface.", style="bold yellow")
             from src.terminal_interface import interactive_chat_session
             interactive_chat_session()
+
+    
+
+        
 
 if __name__ == "__main__":
     main() 
