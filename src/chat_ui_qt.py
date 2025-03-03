@@ -207,6 +207,17 @@ class VSCodeStyleHelper:
             }}
         """)
 
+        # === Remove or comment out the lines below ===
+        # app.setStyleSheet(app.styleSheet() + f"""
+        #     /* GLOBAL OVERRIDE FOR QTabWidget PANE */
+        #     QTabWidget::pane {{
+        #         border: none !important;
+        #         border-top: none !important;
+        #         top: -2px;
+        #         background-color: {VSCodeStyleHelper.BG_COLOR};
+        #     }}
+        # """)
+        
 # Import the necessary components from the existing code
 from src.openai_assistant import (
     initialize_chat,

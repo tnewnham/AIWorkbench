@@ -653,8 +653,9 @@ class VectorStorePanel(QWidget):
         operations_layout = QHBoxLayout()
         self.refresh_files_btn = QPushButton("Refresh")
         self.refresh_files_btn.clicked.connect(self.refresh_files)
-        self.browse_file_btn = QPushButton("Browse")
-        self.browse_file_btn.clicked.connect(self.browse_file)
+        # Remove the browse button and keep only the upload button
+        # self.browse_file_btn = QPushButton("Browse")
+        # self.browse_file_btn.clicked.connect(self.browse_file)
         self.upload_file_btn = QPushButton("Upload")
         self.upload_file_btn.clicked.connect(self.upload_file)
         self.batch_upload_btn = QPushButton("Batch Upload")
@@ -665,7 +666,7 @@ class VectorStorePanel(QWidget):
         self.download_file_btn.clicked.connect(self.download_selected_file)
         
         operations_layout.addWidget(self.refresh_files_btn)
-        operations_layout.addWidget(self.browse_file_btn)
+        # operations_layout.addWidget(self.browse_file_btn)  # Remove this line
         operations_layout.addWidget(self.upload_file_btn)
         operations_layout.addWidget(self.batch_upload_btn)
         operations_layout.addWidget(self.delete_file_btn)
@@ -865,11 +866,11 @@ class VectorStorePanel(QWidget):
         
         # File path selection
         file_path_layout = QHBoxLayout()
-        file_path_layout.addWidget(QLabel("File:"))
+        file_path_layout.addWidget(QLabel("Selected File:"))
         
         self.file_path_field = QLineEdit()
         self.file_path_field.setReadOnly(True)
-        self.file_path_field.setPlaceholderText("Select a file to upload...")
+        self.file_path_field.setPlaceholderText("No file selected - click Upload to choose a file...")
         # Style the file path field
         self.file_path_field.setStyleSheet(f"""
             QLineEdit {{
@@ -882,9 +883,10 @@ class VectorStorePanel(QWidget):
         """)
         file_path_layout.addWidget(self.file_path_field)
         
-        self.browse_button = QPushButton("Browse...")
-        self.browse_button.clicked.connect(self.browse_file)
-        file_path_layout.addWidget(self.browse_button)
+        # Remove the separate browse button
+        # self.browse_button = QPushButton("Browse...")
+        # self.browse_button.clicked.connect(self.browse_file)
+        # file_path_layout.addWidget(self.browse_button)
         
         form_layout.addLayout(file_path_layout)
         
@@ -927,7 +929,7 @@ class VectorStorePanel(QWidget):
         upload_layout = QHBoxLayout()
         upload_layout.addStretch()
         
-        self.upload_button = QPushButton("Upload File")
+        self.upload_button = QPushButton("Upload")
         self.upload_button.clicked.connect(self.upload_file)
         upload_layout.addWidget(self.upload_button)
         
@@ -2055,25 +2057,23 @@ class VectorStorePanel(QWidget):
         
         QMessageBox.information(self, "Download Complete", message)
     
-    def browse_file(self):
-        """Open file browser dialog"""
+    def upload_file(self):
+        """Browse for and upload a file to OpenAI"""
+        # First, open file browser dialog to select a file
         filename, _ = QFileDialog.getOpenFileName(
             self,
-            "Select File",
+            "Select File to Upload",
             "",
             "All Files (*.*)"
         )
         
-        if filename:
-            self.file_path_field.setText(filename)
-    
-    def upload_file(self):
-        """Upload a file to OpenAI"""
-        file_path = self.file_path_field.text()
-        if not file_path:
-            QMessageBox.warning(self, "Error", "Please select a file to upload.")
+        if not filename:  # User canceled the file dialog
             return
+            
+        # Set the selected file path to the file_path_field on the Upload tab
+        self.file_path_field.setText(filename)
         
+        # Get the purpose from the selection in the Upload tab
         purpose = self.file_purpose.currentText()
         
         # Show progress
@@ -2086,7 +2086,7 @@ class VectorStorePanel(QWidget):
         self.progress_timer.start(100)
         
         # Start upload in worker thread
-        worker = self._create_worker(self.storage_manager.upload_file, file_path, purpose)
+        worker = self._create_worker(self.storage_manager.upload_file, filename, purpose)
         worker.signals.result.connect(self._on_file_uploaded)
         worker.signals.error.connect(self._on_upload_error)
         worker.start()
