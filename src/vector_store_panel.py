@@ -173,11 +173,11 @@ class VectorStorePanel(QWidget):
                 color: {VSCodeStyleHelper.TEXT_COLOR};
                 border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
                 border-bottom-color: {VSCodeStyleHelper.BORDER_COLOR};
-                padding: 5px 10px;
+                padding: 5px 15px;
                 border-top-left-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
                 border-top-right-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
-                min-width: 8ex;
-                margin-right: 2px;
+                min-width: 14ex;
+                margin-right: 1px;
             }}
             QTabBar::tab:selected {{
                 background-color: {VSCodeStyleHelper.BG_COLOR};  /* Active tab background */
@@ -2102,10 +2102,13 @@ class VectorStorePanel(QWidget):
         self.progress_timer.stop()
         self.progress_bar.setValue(100)
         
+        # Use direct attribute access instead of dict-style .get() method
+        filename = getattr(file_data, 'filename', 'unknown')
+        
         QMessageBox.information(
             self, 
             "Success", 
-            f"File '{file_data.get('filename', 'unknown')}' uploaded successfully."
+            f"File '{filename}' uploaded successfully."
         )
         
         # Clear form and refresh
