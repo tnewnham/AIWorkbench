@@ -87,7 +87,7 @@ class VSCodeStyleHelper:
                 width: 8px !important;
                 margin: 0px !important;
                 border: none !important;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+                border-radius: 12px !important;
             }}
             
             QScrollBar::handle:vertical,
@@ -100,7 +100,7 @@ class VSCodeStyleHelper:
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR} !important;
                 min-height: 30px !important;
                 border: none !important;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+                border-radius: 12px !important;
             }}
             
             QScrollBar::handle:vertical:hover,
@@ -143,7 +143,7 @@ class VSCodeStyleHelper:
                 height: 8px !important;
                 margin: 0px !important;
                 border: none !important;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+                border-radius: 20px !important;
             }}
             
             QScrollBar::handle:horizontal,
@@ -156,7 +156,7 @@ class VSCodeStyleHelper:
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR} !important;
                 min-width: 30px !important;
                 border: none !important;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+                border-radius: 20px !important;
             }}
             
             QScrollBar::handle:horizontal:hover,

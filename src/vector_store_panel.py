@@ -313,12 +313,12 @@ class VectorStorePanel(QWidget):
                 background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
                 width: 8px;
                 margin: 0px;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                border-radius: 20;
             }}
             QScrollBar::handle:vertical {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
                 min-height: 30px;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                border-radius: 20;
             }}
             QScrollBar::handle:vertical:hover {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
@@ -333,12 +333,12 @@ class VectorStorePanel(QWidget):
                 background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
                 height: 8px;
                 margin: 0px;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                border-radius: 20;
             }}
             QScrollBar::handle:horizontal {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
                 min-width: 30px;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                border-radius: 20;
             }}
             QScrollBar::handle:horizontal:hover {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
@@ -384,12 +384,12 @@ class VectorStorePanel(QWidget):
                 background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
                 width: 8px;
                 margin: 0px;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
             }}
             QScrollBar::handle:vertical {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
                 min-height: 30px;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
             }}
             QScrollBar::handle:vertical:hover {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
@@ -404,12 +404,12 @@ class VectorStorePanel(QWidget):
                 background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
                 height: 8px;
                 margin: 0px;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
             }}
             QScrollBar::handle:horizontal {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
                 min-width: 30px;
-                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
             }}
             QScrollBar::handle:horizontal:hover {{
                 background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
