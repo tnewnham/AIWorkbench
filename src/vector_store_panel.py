@@ -10,6 +10,24 @@ import time
 import logging
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
+import platform
+import re
+import ctypes
+from pathlib import Path
+
+# Define VSCodeStyleHelper for consistent styling
+class VSCodeStyleHelper:
+    SIDEBAR_BG_COLOR = "#252526"
+    BG_COLOR = "#212121"
+    TEXT_COLOR = "#D4D4D4"
+    ACCENT_COLOR = "#007ACC"
+    BORDER_COLOR = "#3E3E42"
+    LARGE_RADIUS = "10px"
+    MEDIUM_RADIUS = "8px"
+    SMALL_RADIUS = "6px"
+    SCROLLBAR_BG_COLOR = "#212121"  # Match main background
+    SCROLLBAR_HANDLE_COLOR = "#424242"  # Subtle grey
+    SCROLLBAR_HANDLE_HOVER_COLOR = "#686868"  # Lighter grey on hover
 
 # Configure logging
 logging.basicConfig(
@@ -19,15 +37,17 @@ logging.basicConfig(
     filemode='w'
 )
 
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit,
-    QListWidget, QListWidgetItem, QSplitter, QFileDialog, QMessageBox,
-    QComboBox, QLineEdit, QFormLayout, QGroupBox, QProgressBar, QTabWidget,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QCheckBox,
-    QApplication, QDialog, QRadioButton, QScrollArea, QWidget, QProgressDialog
-)
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, QObject, QThread, QTimer
-from PyQt5.QtGui import QIcon, QFont, QColor
+# Import libraries
+import requests
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+
+# Import WindowsStyleHelper for Windows-specific styling
+from src.windows_style_helper import WindowsStyleHelper
+
+# Import the OpenAI client
+from openai import OpenAI
 
 # Import the OpenAI resource manager
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -127,7 +147,29 @@ class VectorStorePanel(QWidget):
         
         # Create tabs for different operations
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet("QTabWidget::pane { border: 1px solid #3E3E42; }")
+        self.tabs.setStyleSheet(f"""
+            QTabWidget::pane {{ 
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR}; 
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS}; 
+            }}
+            QTabBar::tab {{ 
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-bottom-color: {VSCodeStyleHelper.BORDER_COLOR};
+                border-top-left-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                border-top-right-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                min-width: 8ex;
+                padding: 5px 10px;
+            }}
+            QTabBar::tab:selected {{ 
+                background-color: {VSCodeStyleHelper.BG_COLOR};
+                border-bottom-color: {VSCodeStyleHelper.BG_COLOR};
+            }}
+            QTabBar::tab:!selected {{ 
+                margin-top: 2px;
+            }}
+        """)
         
         # Create tabs
         self.vector_stores_tab = self.create_vector_stores_tab()
@@ -159,6 +201,16 @@ class VectorStorePanel(QWidget):
         self.vs_search_field = QLineEdit()
         self.vs_search_field.setPlaceholderText("Search by name or ID...")
         self.vs_search_field.textChanged.connect(self._filter_vector_stores)
+        # Add rounded corners to search box
+        self.vs_search_field.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                padding: 5px;
+            }}
+        """)
         search_layout.addWidget(self.vs_search_field)
         search_filter_layout.addLayout(search_layout)
         
@@ -174,6 +226,27 @@ class VectorStorePanel(QWidget):
         self.date_filter.addItem("Last 30 Days")
         self.date_filter.addItem("Last 90 Days")
         self.date_filter.currentIndexChanged.connect(self._filter_vector_stores)
+        # Add styling to the combo box
+        self.date_filter.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                padding: 5px;
+                min-width: 100px;
+            }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+                border-left-width: 1px;
+                border-left-color: {VSCodeStyleHelper.BORDER_COLOR};
+                border-left-style: solid;
+                border-top-right-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                border-bottom-right-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+        """)
         
         date_filter_layout.addWidget(self.date_filter)
         search_filter_layout.addLayout(date_filter_layout)
@@ -205,21 +278,167 @@ class VectorStorePanel(QWidget):
         self.vs_list = QTableWidget()
         self.vs_list.setColumnCount(4)
         self.vs_list.setHorizontalHeaderLabels(["ID", "Name", "Created", "Files"])
-        self.vs_list.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # Set fixed column widths
+        self.vs_list.setColumnWidth(0, 180)  # ID column (was 220)
+        self.vs_list.setColumnWidth(1, 183)  # Name column (was 250)
+        self.vs_list.setColumnWidth(2, 115)  # Created column (was 180)
+        self.vs_list.setColumnWidth(3, 50)   # Files count column (was 100)
+        # Set vertical header (row numbers) width
+        self.vs_list.verticalHeader().setFixedWidth(20)  # Narrow width for row numbers
+        # Prevent column resizing
+        header = self.vs_list.horizontalHeader()
+        for i in range(4):
+            header.setSectionResizeMode(i, QHeaderView.Fixed)
         self.vs_list.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.vs_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.vs_list.setEditTriggers(QAbstractItemView.NoEditTriggers)  # Disable editing triggers
         self.vs_list.itemSelectionChanged.connect(self.on_vector_store_selected)
+        # Style the table with rounded corners
+        self.vs_list.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: {VSCodeStyleHelper.BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 5px;
+            }}
+            QHeaderView::section {{
+                background-color: {VSCodeStyleHelper.BG_COLOR};  /* Match table background */
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                padding: 5px;
+                border: none;  /* Keep borders hidden */
+                height: 10px;
+            }}
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                width: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                height: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-width: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
         
         # Vector Store details
         details_group = QGroupBox("Vector Store Details")
+        details_group.setStyleSheet(f"""
+            QGroupBox {{
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                margin-top: 10px;
+                padding-top: 15px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 5px;
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+            }}
+        """)
         details_layout = QVBoxLayout(details_group)
         
         self.vs_details = QTextEdit()
         self.vs_details.setReadOnly(True)
+        # Style the text edit
+        self.vs_details.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {VSCodeStyleHelper.BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 5px;
+            }}
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                width: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                height: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-width: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
         details_layout.addWidget(self.vs_details)
         
         # Vector Store files panel
         files_group = QGroupBox("Files in Vector Store")
+        files_group.setStyleSheet(f"""
+            QGroupBox {{
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                margin-top: 10px;
+                padding-top: 15px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 5px;
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+            }}
+        """)
         files_layout = QVBoxLayout(files_group)
         
         # Add files search field
@@ -228,6 +447,16 @@ class VectorStorePanel(QWidget):
         self.vs_files_search = QLineEdit()
         self.vs_files_search.setPlaceholderText("Search by file ID or name...")
         self.vs_files_search.textChanged.connect(self._filter_vector_store_files)
+        # Style the search field
+        self.vs_files_search.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                padding: 5px;
+            }}
+        """)
         files_search_layout.addWidget(self.vs_files_search)
         files_layout.addLayout(files_search_layout)
         
@@ -235,9 +464,77 @@ class VectorStorePanel(QWidget):
         self.vs_files_table = QTableWidget()
         self.vs_files_table.setColumnCount(4)
         self.vs_files_table.setHorizontalHeaderLabels(["Filename", "Created", "Status", "File Size"])
-        self.vs_files_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # Set fixed column widths
+        self.vs_files_table.setColumnWidth(0, 100)  # Filename column (was 250)
+        self.vs_files_table.setColumnWidth(1, 142)  # Created column (was 180)
+        self.vs_files_table.setColumnWidth(2, 80)   # Status column (was 100)
+        self.vs_files_table.setColumnWidth(3, 80)   # File Size column (was 120)
+        # Set vertical header (row numbers) width
+        self.vs_files_table.verticalHeader().setFixedWidth(20)  # Narrow width for row numbers
+        # Prevent column resizing
+        header = self.vs_files_table.horizontalHeader()
+        for i in range(4):
+            header.setSectionResizeMode(i, QHeaderView.Fixed)
         self.vs_files_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.vs_files_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.vs_files_table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # Disable editing triggers
+        # Style the table
+        self.vs_files_table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: {VSCodeStyleHelper.BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 5px;
+            }}
+            QHeaderView::section {{
+                background-color: {VSCodeStyleHelper.BG_COLOR};  /* Match table background */
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                padding: 5px;
+                border: none;  /* Keep borders hidden */
+                height: 10px;  /* Consistent with other tables */
+            }}
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                width: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                height: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-width: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
         
         files_layout.addWidget(self.vs_files_table)
         
@@ -277,6 +574,16 @@ class VectorStorePanel(QWidget):
         self.file_search_field = QLineEdit()
         self.file_search_field.setPlaceholderText("Search by filename or ID...")
         self.file_search_field.textChanged.connect(self._filter_files)
+        # Add rounded styling to search box
+        self.file_search_field.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                padding: 5px;
+            }}
+        """)
         search_layout.addWidget(self.file_search_field)
         search_filter_layout.addLayout(search_layout)
         
@@ -290,59 +597,211 @@ class VectorStorePanel(QWidget):
         self.purpose_filter.addItem("fine-tune")
         self.purpose_filter.addItem("batch")
         self.purpose_filter.currentTextChanged.connect(self.refresh_files)
+        # Add styling to the combo box
+        self.purpose_filter.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                padding: 5px;
+                min-width: 100px;
+            }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+                border-left-width: 1px;
+                border-left-color: {VSCodeStyleHelper.BORDER_COLOR};
+                border-left-style: solid;
+                border-top-right-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                border-bottom-right-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+        """)
         purpose_layout.addWidget(self.purpose_filter)
         search_filter_layout.addLayout(purpose_layout)
-        
-        # Date filter
-        date_filter_layout = QHBoxLayout()
-        date_filter_layout.addWidget(QLabel("Date:"))
-        
-        # Date range options
-        self.file_date_filter = QComboBox()
-        self.file_date_filter.addItem("All Time")
-        self.file_date_filter.addItem("Today")
-        self.file_date_filter.addItem("Last 7 Days")
-        self.file_date_filter.addItem("Last 30 Days")
-        self.file_date_filter.addItem("Last 90 Days")
-        self.file_date_filter.currentIndexChanged.connect(self._filter_files)
-        
-        date_filter_layout.addWidget(self.file_date_filter)
-        search_filter_layout.addLayout(date_filter_layout)
         
         layout.addLayout(search_filter_layout)
         
         # File operations panel
         operations_layout = QHBoxLayout()
-        self.refresh_files_list_btn = QPushButton("Refresh")
-        self.refresh_files_list_btn.clicked.connect(self.refresh_files)
-        self.delete_file_btn = QPushButton("Delete")
+        self.refresh_files_btn = QPushButton("Refresh")
+        self.refresh_files_btn.clicked.connect(self.refresh_files)
+        self.browse_file_btn = QPushButton("Browse")
+        self.browse_file_btn.clicked.connect(self.browse_file)
+        self.upload_file_btn = QPushButton("Upload")
+        self.upload_file_btn.clicked.connect(self.upload_file)
+        self.batch_upload_btn = QPushButton("Batch Upload")
+        self.batch_upload_btn.clicked.connect(self.add_batch_files)
+        self.delete_file_btn = QPushButton("Delete Selected")
         self.delete_file_btn.clicked.connect(self.delete_selected_file)
-        self.download_file_btn = QPushButton("Download")
+        self.download_file_btn = QPushButton("Download Selected")
         self.download_file_btn.clicked.connect(self.download_selected_file)
         
-        operations_layout.addWidget(self.refresh_files_list_btn)
-        operations_layout.addWidget(self.download_file_btn)
+        operations_layout.addWidget(self.refresh_files_btn)
+        operations_layout.addWidget(self.browse_file_btn)
+        operations_layout.addWidget(self.upload_file_btn)
+        operations_layout.addWidget(self.batch_upload_btn)
         operations_layout.addWidget(self.delete_file_btn)
+        operations_layout.addWidget(self.download_file_btn)
         
         layout.addLayout(operations_layout)
         
+        # Files list and details splitter
+        splitter = QSplitter(Qt.Vertical)
+        
         # Files list
         self.files_table = QTableWidget()
-        self.files_table.setColumnCount(5)
-        self.files_table.setHorizontalHeaderLabels(["ID", "Filename", "Purpose", "Size", "Created"])
-        self.files_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.files_table.setColumnCount(4)
+        self.files_table.setHorizontalHeaderLabels(["Filename", "Purpose", "Size", "Created"])
+        # Set fixed column widths
+        self.files_table.setColumnWidth(0, 245)  # Filename column (expanded)
+        self.files_table.setColumnWidth(1, 80)   # Purpose column
+        self.files_table.setColumnWidth(2, 75)   # Size column
+        self.files_table.setColumnWidth(3, 115)  # Created column
+        # Set vertical header (row numbers) width
+        self.files_table.verticalHeader().setFixedWidth(28)  # Narrow width for row numbers
+        # Prevent column resizing
+        header = self.files_table.horizontalHeader()
+        for i in range(4):
+            header.setSectionResizeMode(i, QHeaderView.Fixed)
         self.files_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.files_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.files_table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # Disable editing triggers
         self.files_table.itemSelectionChanged.connect(self.on_file_selected)
+        # Style the table
+        self.files_table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: {VSCodeStyleHelper.BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 5px;
+            }}
+            QHeaderView::section {{
+                background-color: {VSCodeStyleHelper.BG_COLOR};  /* Match table background */
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                padding: 5px;
+                border: none;  /* Keep borders hidden */
+                height: 10px;  /* Consistent with other tables */
+            }}
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                width: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                height: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-width: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
         
         # File details
+        details_group = QGroupBox("File Details")
+        details_group.setStyleSheet(f"""
+            QGroupBox {{
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                margin-top: 10px;
+                padding-top: 15px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 5px;
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+            }}
+        """)
+        details_layout = QVBoxLayout(details_group)
+        
         self.file_details = QTextEdit()
         self.file_details.setReadOnly(True)
+        # Style the text edit
+        self.file_details.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {VSCodeStyleHelper.BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 5px;
+            }}
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                width: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                height: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-width: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
+        details_layout.addWidget(self.file_details)
         
-        # Add widgets to layout using splitter
-        splitter = QSplitter(Qt.Vertical)
+        # Add widgets to splitter
         splitter.addWidget(self.files_table)
-        splitter.addWidget(self.file_details)
+        splitter.addWidget(details_group)
         
         layout.addWidget(splitter)
         return tab
@@ -352,62 +811,208 @@ class VectorStorePanel(QWidget):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         
-        # File selection
-        file_selection_group = QGroupBox("File Selection")
-        file_selection_layout = QVBoxLayout(file_selection_group)
+        # Upload section title
+        title_layout = QHBoxLayout()
+        title_label = QLabel("Upload Files")
+        title_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        title_layout.addWidget(title_label)
+        layout.addLayout(title_layout)
         
-        select_file_layout = QHBoxLayout()
-        self.file_path_edit = QLineEdit()
-        self.file_path_edit.setReadOnly(True)
-        self.browse_btn = QPushButton("Browse...")
-        self.browse_btn.clicked.connect(self.browse_file)
+        # Upload form
+        form_group = QGroupBox("Upload Options")
+        form_group.setStyleSheet(f"""
+            QGroupBox {{
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                margin-top: 10px;
+                padding-top: 15px;
+                padding-bottom: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 5px;
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+            }}
+        """)
+        form_layout = QVBoxLayout(form_group)
         
-        select_file_layout.addWidget(self.file_path_edit)
-        select_file_layout.addWidget(self.browse_btn)
-        file_selection_layout.addLayout(select_file_layout)
+        # File path selection
+        file_path_layout = QHBoxLayout()
+        file_path_layout.addWidget(QLabel("File:"))
+        
+        self.file_path_field = QLineEdit()
+        self.file_path_field.setReadOnly(True)
+        self.file_path_field.setPlaceholderText("Select a file to upload...")
+        # Style the file path field
+        self.file_path_field.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                padding: 5px;
+            }}
+        """)
+        file_path_layout.addWidget(self.file_path_field)
+        
+        self.browse_button = QPushButton("Browse...")
+        self.browse_button.clicked.connect(self.browse_file)
+        file_path_layout.addWidget(self.browse_button)
+        
+        form_layout.addLayout(file_path_layout)
         
         # Purpose selection
         purpose_layout = QHBoxLayout()
         purpose_layout.addWidget(QLabel("Purpose:"))
-        self.purpose_combo = QComboBox()
-        self.purpose_combo.addItems(["assistants", "vision", "fine-tune", "batch"])
-        purpose_layout.addWidget(self.purpose_combo)
         
-        file_selection_layout.addLayout(purpose_layout)
+        self.file_purpose = QComboBox()
+        self.file_purpose.addItem("assistants")
+        self.file_purpose.addItem("vision")
+        self.file_purpose.addItem("fine-tune")
+        self.file_purpose.addItem("batch")
+        # Style the purpose dropdown
+        self.file_purpose.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                padding: 5px;
+                min-width: 150px;
+            }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+                border-left-width: 1px;
+                border-left-color: {VSCodeStyleHelper.BORDER_COLOR};
+                border-left-style: solid;
+                border-top-right-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                border-bottom-right-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+        """)
+        purpose_layout.addWidget(self.file_purpose)
+        purpose_layout.addStretch()
+        
+        form_layout.addLayout(purpose_layout)
         
         # Upload button
-        self.upload_btn = QPushButton("Upload File")
-        self.upload_btn.clicked.connect(self.upload_file)
-        file_selection_layout.addWidget(self.upload_btn)
+        upload_layout = QHBoxLayout()
+        upload_layout.addStretch()
         
-        # Progress bar
-        self.upload_progress = QProgressBar()
-        self.upload_progress.setVisible(False)
-        file_selection_layout.addWidget(self.upload_progress)
+        self.upload_button = QPushButton("Upload File")
+        self.upload_button.clicked.connect(self.upload_file)
+        upload_layout.addWidget(self.upload_button)
         
-        # Batch upload section
-        batch_upload_group = QGroupBox("Batch Upload")
-        batch_upload_layout = QVBoxLayout(batch_upload_group)
+        self.batch_button = QPushButton("Batch Upload")
+        self.batch_button.clicked.connect(self.add_batch_files)
+        upload_layout.addWidget(self.batch_button)
         
-        self.batch_files_list = QListWidget()
-        batch_upload_layout.addWidget(self.batch_files_list)
+        form_layout.addLayout(upload_layout)
         
-        batch_buttons_layout = QHBoxLayout()
-        self.add_batch_files_btn = QPushButton("Add Files")
-        self.add_batch_files_btn.clicked.connect(self.add_batch_files)
-        self.clear_batch_btn = QPushButton("Clear")
-        self.clear_batch_btn.clicked.connect(self.batch_files_list.clear)
-        self.upload_batch_btn = QPushButton("Upload All")
-        self.upload_batch_btn.clicked.connect(self.upload_batch_files)
+        # Progress section
+        progress_layout = QVBoxLayout()
+        progress_label = QLabel("Upload Progress:")
+        progress_layout.addWidget(progress_label)
         
-        batch_buttons_layout.addWidget(self.add_batch_files_btn)
-        batch_buttons_layout.addWidget(self.clear_batch_btn)
-        batch_buttons_layout.addWidget(self.upload_batch_btn)
-        batch_upload_layout.addLayout(batch_buttons_layout)
+        self.progress_bar = QProgressBar()
+        # Style the progress bar
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                text-align: center;
+                height: 25px;
+                padding: 0px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {VSCodeStyleHelper.ACCENT_COLOR};
+                border-radius: {VSCodeStyleHelper.SMALL_RADIUS};
+            }}
+        """)
+        progress_layout.addWidget(self.progress_bar)
         
-        # Layout
-        layout.addWidget(file_selection_group)
-        layout.addWidget(batch_upload_group)
+        form_layout.addLayout(progress_layout)
+        
+        # Add form to main layout
+        layout.addWidget(form_group)
+        
+        # Upload log
+        log_group = QGroupBox("Upload Log")
+        log_group.setStyleSheet(f"""
+            QGroupBox {{
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                margin-top: 10px;
+                padding-top: 15px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 5px;
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+            }}
+        """)
+        log_layout = QVBoxLayout(log_group)
+        
+        self.upload_log = QTextEdit()
+        self.upload_log.setReadOnly(True)
+        # Style the upload log
+        self.upload_log.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {VSCodeStyleHelper.BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 5px;
+            }}
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                width: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                height: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-width: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
+        log_layout.addWidget(self.upload_log)
+        
+        layout.addWidget(log_group)
         
         return tab
     
@@ -419,7 +1024,7 @@ class VectorStorePanel(QWidget):
         worker.start()
     
     def _on_vector_stores_loaded(self, stores_data):
-        """Handle loaded vector stores data"""
+        """Process vector stores data and update the UI"""
         if not stores_data or "data" not in stores_data:
             return
         
@@ -427,20 +1032,26 @@ class VectorStorePanel(QWidget):
         for row, store in enumerate(stores_data["data"]):
             # ID
             id_item = QTableWidgetItem(store["id"])
-            id_item.setData(Qt.UserRole, store)
+            id_item.setFlags(id_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
+            id_item.setData(Qt.UserRole, store)  # Restore user data
             self.vs_list.setItem(row, 0, id_item)
             
             # Name
-            self.vs_list.setItem(row, 1, QTableWidgetItem(store["name"]))
+            name_item = QTableWidgetItem(store["name"])
+            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
+            self.vs_list.setItem(row, 1, name_item)
             
             # Created
-            created_time = datetime.fromtimestamp(store["created_at"])
-            created_str = created_time.strftime("%Y-%m-%d %H:%M:%S")
-            self.vs_list.setItem(row, 2, QTableWidgetItem(created_str))
+            created_str = datetime.fromtimestamp(store["created_at"]).strftime("%Y-%m-%d %H:%M:%S")
+            created_item = QTableWidgetItem(created_str)
+            created_item.setFlags(created_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
+            self.vs_list.setItem(row, 2, created_item)
             
             # Files count
             files_count = store["file_counts"]["total"]
-            self.vs_list.setItem(row, 3, QTableWidgetItem(str(files_count)))
+            files_count_item = QTableWidgetItem(str(files_count))
+            files_count_item.setFlags(files_count_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
+            self.vs_list.setItem(row, 3, files_count_item)
     
     def on_vector_store_selected(self):
         """Handle vector store selection"""
@@ -569,7 +1180,7 @@ class VectorStorePanel(QWidget):
         return vector_store_files
     
     def _on_vector_store_files_loaded(self, files_data):
-        """Handle loaded vector store files data"""
+        """Process vector store files data and update the UI"""
         self.vs_files_table.setRowCount(0)
         
         if not files_data or not hasattr(files_data, 'data') or not files_data.data:
@@ -588,24 +1199,28 @@ class VectorStorePanel(QWidget):
         for row, file in enumerate(files_data.data):
             # Store file ID as user data but don't show it as a column
             id_item = QTableWidgetItem(getattr(file, 'filename', ''))
-            id_item.setData(Qt.UserRole, file)
-            
-            # Filename - now first column
+            id_item.setFlags(id_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
+            id_item.setData(Qt.UserRole, file)  # Restore user data
             self.vs_files_table.setItem(row, 0, id_item)
             
-            # Created - now second column
-            created_time = datetime.fromtimestamp(file.created_at)
-            created_str = created_time.strftime("%Y-%m-%d %H:%M:%S")
-            self.vs_files_table.setItem(row, 1, QTableWidgetItem(created_str))
+            # Filename - now first column
+            created_str = datetime.fromtimestamp(file.created_at).strftime("%Y-%m-%d %H:%M:%S")
+            created_item = QTableWidgetItem(created_str)
+            created_item.setFlags(created_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
+            self.vs_files_table.setItem(row, 1, created_item)
             
             # Status - now third column
             status = getattr(file, 'status', 'unknown')
-            self.vs_files_table.setItem(row, 2, QTableWidgetItem(status))
+            status_item = QTableWidgetItem(status)
+            status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
+            self.vs_files_table.setItem(row, 2, status_item)
             
             # File Size - now fourth column
             file_size_bytes = getattr(file, 'bytes', 0)
             file_size_str = self._format_file_size(file_size_bytes)
-            self.vs_files_table.setItem(row, 3, QTableWidgetItem(file_size_str))
+            size_item = QTableWidgetItem(file_size_str)
+            size_item.setFlags(size_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
+            self.vs_files_table.setItem(row, 3, size_item)
         
         # Resize columns to fit content
         self.vs_files_table.resizeColumnsToContents()
@@ -699,15 +1314,20 @@ class VectorStorePanel(QWidget):
         # Confirm deletion
         stores_text = "\n".join([f"• {store['name']} ({store['id']})" for store in selected_stores])
         
-        confirm = QMessageBox.question(
-            self, 
+        confirm_dialog = QMessageBox(
+            QMessageBox.Question,
             "Confirm Deletion",
             f"Are you sure you want to delete {len(selected_stores)} vector store(s)?\n\n{stores_text}\n\nThis operation cannot be undone.",
             QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            self
         )
+        confirm_dialog.setDefaultButton(QMessageBox.No)
         
-        if confirm != QMessageBox.Yes:
+        # Set dark title bar for confirmation dialog
+        if platform.system() == "Windows":
+            QTimer.singleShot(0, lambda: WindowsStyleHelper.set_dark_title_bar(int(confirm_dialog.winId())))
+        
+        if confirm_dialog.exec_() != QMessageBox.Yes:
             return
         
         # Add a progress bar to the details panel if it doesn't exist
@@ -1081,7 +1701,7 @@ class VectorStorePanel(QWidget):
         worker.start()
     
     def _on_files_loaded(self, files_data):
-        """Handle loaded files data"""
+        """Process files data and update the UI"""
         self.files_table.setRowCount(0)
         self.file_details.clear()
         
@@ -1090,25 +1710,28 @@ class VectorStorePanel(QWidget):
         
         self.files_table.setRowCount(len(files_data["data"]))
         for row, file in enumerate(files_data["data"]):
-            # ID
-            id_item = QTableWidgetItem(file["id"])
-            id_item.setData(Qt.UserRole, file)
-            self.files_table.setItem(row, 0, id_item)
+            # Filename (now column 0)
+            filename_item = QTableWidgetItem(file["filename"])
+            filename_item.setFlags(filename_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
+            filename_item.setData(Qt.UserRole, file)  # Store file data for reference
+            self.files_table.setItem(row, 0, filename_item)
             
-            # Filename
-            self.files_table.setItem(row, 1, QTableWidgetItem(file["filename"]))
+            # Purpose (now column 1)
+            purpose_item = QTableWidgetItem(file["purpose"])
+            purpose_item.setFlags(purpose_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
+            self.files_table.setItem(row, 1, purpose_item)
             
-            # Purpose
-            self.files_table.setItem(row, 2, QTableWidgetItem(file["purpose"]))
+            # Size (now column 2)
+            size_str = self._format_file_size(file.get("bytes", 0))
+            size_item = QTableWidgetItem(size_str)
+            size_item.setFlags(size_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
+            self.files_table.setItem(row, 2, size_item)
             
-            # Size
-            size_str = f"{file['bytes']:,} bytes"
-            self.files_table.setItem(row, 3, QTableWidgetItem(size_str))
-            
-            # Created
-            created_time = datetime.fromtimestamp(file["created_at"])
-            created_str = created_time.strftime("%Y-%m-%d %H:%M:%S")
-            self.files_table.setItem(row, 4, QTableWidgetItem(created_str))
+            # Created (now column 3)
+            created_str = datetime.fromtimestamp(file["created_at"]).strftime("%Y-%m-%d %H:%M:%S")
+            created_item = QTableWidgetItem(created_str)
+            created_item.setFlags(created_item.flags() & ~Qt.ItemIsEditable)  # Make item not editable
+            self.files_table.setItem(row, 3, created_item)
     
     def on_file_selected(self):
         """Handle file selection"""
@@ -1166,11 +1789,11 @@ class VectorStorePanel(QWidget):
         file_ids = []
         filenames = []
         for row in selected_rows:
-            id_item = self.files_table.item(row, 0)
-            if not id_item:
+            filename_item = self.files_table.item(row, 0)  # Column 0 is now Filename
+            if not filename_item:
                 continue
             
-            file_data = id_item.data(Qt.UserRole)
+            file_data = filename_item.data(Qt.UserRole)
             if not file_data:
                 continue
             
@@ -1186,15 +1809,20 @@ class VectorStorePanel(QWidget):
         if len(filenames) > 10:
             files_str += f"\n... and {len(filenames) - 10} more"
         
-        confirm = QMessageBox.question(
-            self,
+        confirm_dialog = QMessageBox(
+            QMessageBox.Question,
             "Confirm Deletion",
             f"Are you sure you want to delete the following {len(file_ids)} file(s)?\n\n{files_str}",
             QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            self
         )
+        confirm_dialog.setDefaultButton(QMessageBox.No)
         
-        if confirm != QMessageBox.Yes:
+        # Set dark title bar for confirmation dialog
+        if platform.system() == "Windows":
+            QTimer.singleShot(0, lambda: WindowsStyleHelper.set_dark_title_bar(int(confirm_dialog.winId())))
+        
+        if confirm_dialog.exec_() != QMessageBox.Yes:
             return
         
         # Show progress dialog
@@ -1203,6 +1831,11 @@ class VectorStorePanel(QWidget):
         )
         progress.setWindowTitle("Deleting Files")
         progress.setWindowModality(Qt.WindowModal)
+        
+        # Set dark title bar for progress dialog
+        if platform.system() == "Windows":
+            QTimer.singleShot(0, lambda: WindowsStyleHelper.set_dark_title_bar(int(progress.winId())))
+        
         progress.show()
         
         # Delete files in a worker thread
@@ -1241,11 +1874,11 @@ class VectorStorePanel(QWidget):
         # Collect file data for download
         file_data_list = []
         for row in selected_rows:
-            id_item = self.files_table.item(row, 0)
-            if not id_item:
+            filename_item = self.files_table.item(row, 0)  # Column 0 is now Filename
+            if not filename_item:
                 continue
             
-            file_data = id_item.data(Qt.UserRole)
+            file_data = filename_item.data(Qt.UserRole)
             if not file_data:
                 continue
             
@@ -1396,20 +2029,20 @@ class VectorStorePanel(QWidget):
         )
         
         if filename:
-            self.file_path_edit.setText(filename)
+            self.file_path_field.setText(filename)
     
     def upload_file(self):
         """Upload a file to OpenAI"""
-        file_path = self.file_path_edit.text()
+        file_path = self.file_path_field.text()
         if not file_path:
             QMessageBox.warning(self, "Error", "Please select a file to upload.")
             return
         
-        purpose = self.purpose_combo.currentText()
+        purpose = self.file_purpose.currentText()
         
         # Show progress
-        self.upload_progress.setVisible(True)
-        self.upload_progress.setValue(0)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
         
         # Create a timer to update progress (simulated)
         self.progress_timer = QTimer()
@@ -1424,14 +2057,14 @@ class VectorStorePanel(QWidget):
     
     def _update_progress(self):
         """Update the progress bar (simulated)"""
-        current = self.upload_progress.value()
+        current = self.progress_bar.value()
         if current < 95:  # Don't reach 100 until we get confirmation
-            self.upload_progress.setValue(current + 5)
+            self.progress_bar.setValue(current + 5)
     
     def _on_file_uploaded(self, file_data):
         """Handle uploaded file data"""
         self.progress_timer.stop()
-        self.upload_progress.setValue(100)
+        self.progress_bar.setValue(100)
         
         QMessageBox.information(
             self, 
@@ -1440,14 +2073,14 @@ class VectorStorePanel(QWidget):
         )
         
         # Clear form and refresh
-        self.file_path_edit.clear()
-        self.upload_progress.setVisible(False)
+        self.file_path_field.clear()
+        self.progress_bar.setVisible(False)
         self.refresh_files()
     
     def _on_upload_error(self, error_message):
         """Handle upload error"""
         self.progress_timer.stop()
-        self.upload_progress.setVisible(False)
+        self.progress_bar.setVisible(False)
         QMessageBox.critical(self, "Upload Error", f"Error uploading file: {error_message}")
     
     def add_batch_files(self):
@@ -1471,7 +2104,7 @@ class VectorStorePanel(QWidget):
             QMessageBox.warning(self, "Error", "Please add files to the batch.")
             return
         
-        purpose = self.purpose_combo.currentText()
+        purpose = self.file_purpose.currentText()
         
         # TODO: Implement batch upload with progress tracking
         QMessageBox.information(self, "Info", "Batch upload is coming soon.")
@@ -1573,10 +2206,9 @@ class VectorStorePanel(QWidget):
             filename = filename_item.text().lower() if filename_item else ""
             
             # Show/hide the row based on the search text
-            self.vs_files_table.setRowHidden(
-                row, 
-                search_text and not (search_text in file_id or search_text in filename)
-            )
+            # Fix: properly structure the boolean expression and pass it as the second argument
+            should_hide = bool(search_text and not (search_text in file_id or search_text in filename))
+            self.vs_files_table.setRowHidden(row, should_hide)
 
     def remove_selected_files(self):
         """Remove selected files from the vector store"""
@@ -1628,23 +2260,33 @@ class VectorStorePanel(QWidget):
                 file_ids.append(id_item.text())
         
         # Confirm deletion
-        confirm = QMessageBox.question(
-            self, 
+        confirm_dialog = QMessageBox(
+            QMessageBox.Question,
             "Confirm Removal",
             f"Are you sure you want to remove {len(file_ids)} file(s) from this vector store?",
             QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            self
         )
+        confirm_dialog.setDefaultButton(QMessageBox.No)
         
-        if confirm != QMessageBox.Yes:
+        # Set dark title bar for confirmation dialog
+        if platform.system() == "Windows":
+            QTimer.singleShot(0, lambda: WindowsStyleHelper.set_dark_title_bar(int(confirm_dialog.winId())))
+        
+        if confirm_dialog.exec_() != QMessageBox.Yes:
             return
-        
+            
         # Show progress dialog
         progress = QProgressDialog(
-            "Removing files from vector store...", "Cancel", 0, len(file_ids), self
+            "Removing files...", "Cancel", 0, len(file_ids), self
         )
         progress.setWindowTitle("Removing Files")
         progress.setWindowModality(Qt.WindowModal)
+        
+        # Set dark title bar for progress dialog
+        if platform.system() == "Windows":
+            QTimer.singleShot(0, lambda: WindowsStyleHelper.set_dark_title_bar(int(progress.winId())))
+            
         progress.show()
         
         # Create a worker to remove the files
@@ -1696,12 +2338,12 @@ class VectorStorePanel(QWidget):
         
         # Loop through all rows and apply filters
         for row in range(self.files_table.rowCount()):
-            # Get the file data from the ID column item
-            id_item = self.files_table.item(row, 0)
-            if not id_item:
+            # Get the file data from the Filename column item
+            filename_item = self.files_table.item(row, 0)  # Column 0 is now Filename
+            if not filename_item:
                 continue
             
-            file_data = id_item.data(Qt.UserRole)
+            file_data = filename_item.data(Qt.UserRole)
             if not file_data:
                 continue
             

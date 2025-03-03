@@ -6,6 +6,7 @@ This module provides UI components to manage OpenAI assistants.
 import os
 import sys
 import json
+import platform
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -20,6 +21,23 @@ from PyQt5.QtGui import QIcon, QFont, QColor, QCursor
 
 # Import the OpenAI client
 from openai import OpenAI
+
+# Import WindowsStyleHelper for dark title bars
+from src.windows_style_helper import WindowsStyleHelper
+
+# Define VSCodeStyleHelper for consistent styling
+class VSCodeStyleHelper:
+    SIDEBAR_BG_COLOR = "#252526"
+    BG_COLOR = "#212121"
+    TEXT_COLOR = "#D4D4D4"
+    ACCENT_COLOR = "#007ACC"
+    BORDER_COLOR = "#3E3E42"
+    LARGE_RADIUS = "10px"
+    MEDIUM_RADIUS = "8px"
+    SMALL_RADIUS = "6px"
+    SCROLLBAR_BG_COLOR = "#212121"  # Match main background
+    SCROLLBAR_HANDLE_COLOR = "#424242"  # Subtle grey
+    SCROLLBAR_HANDLE_HOVER_COLOR = "#686868"  # Lighter grey on hover
 
 class WorkerSignals(QObject):
     """Signals for worker thread communication"""
@@ -86,6 +104,16 @@ class AssistantsPanel(QWidget):
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("Search by ID, name, or description...")
         self.search_box.textChanged.connect(self._filter_assistants)
+        # Add rounded corners to search box
+        self.search_box.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                padding: 5px;
+            }}
+        """)
         search_layout.addWidget(self.search_box)
         
         main_layout.addLayout(search_layout)
@@ -105,6 +133,64 @@ class AssistantsPanel(QWidget):
         # Allow right-click context menu
         self.assistant_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.assistant_list.customContextMenuRequested.connect(self.show_context_menu)
+        # Add rounded corners to the list
+        self.assistant_list.setStyleSheet(f"""
+            QListWidget {{
+                background-color: {VSCodeStyleHelper.BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 5px;
+            }}
+            QListWidget::item {{
+                border-radius: {VSCodeStyleHelper.SMALL_RADIUS};
+                padding: 5px;
+            }}
+            QListWidget::item:selected {{
+                background-color: {VSCodeStyleHelper.ACCENT_COLOR};
+                color: white;
+            }}
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                width: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                height: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-width: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
         
         list_layout.addWidget(self.assistant_list)
         
@@ -143,6 +229,56 @@ class AssistantsPanel(QWidget):
         
         self.details_text = QTextEdit()
         self.details_text.setReadOnly(True)
+        # Apply rounded style to the details text area
+        self.details_text.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 8px;
+            }}
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                width: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                height: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-width: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
         details_layout.addWidget(self.details_text)
         
         # Add details container to splitter
@@ -306,7 +442,7 @@ class AssistantsPanel(QWidget):
         menu.exec_(QCursor.pos())
     
     def delete_selected_assistants(self):
-        """Delete the selected assistants"""
+        """Delete selected assistants after confirmation."""
         selected_items = self.assistant_list.selectedItems()
         if not selected_items:
             QMessageBox.warning(self, "Error", "Please select at least one assistant to delete.")
@@ -347,15 +483,9 @@ class AssistantsPanel(QWidget):
             assistant = selected_items[0].data(Qt.UserRole)
             confirm_msg = f"Are you sure you want to delete assistant '{assistant.name or assistant.id}'?\n\nThis operation cannot be undone."
         
-        confirm = QMessageBox.question(
-            self, 
-            "Confirm Deletion",
-            confirm_msg,
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if confirm != QMessageBox.Yes:
+        if QMessageBox.question(self, "Confirm Deletion", confirm_msg, 
+                              QMessageBox.Yes | QMessageBox.No, 
+                              QMessageBox.No) != QMessageBox.Yes:
             return
         
         # Create progress dialog for deleting multiple assistants
@@ -363,6 +493,7 @@ class AssistantsPanel(QWidget):
             progress = QProgressDialog(f"Deleting {num_selected} assistants...", "Cancel", 0, num_selected, self)
             progress.setWindowTitle("Deleting Assistants")
             progress.setWindowModality(Qt.WindowModal)
+            
             progress.show()
         
         # Delete each selected assistant
@@ -385,11 +516,8 @@ class AssistantsPanel(QWidget):
                     if progress.wasCanceled():
                         break
             except Exception as e:
-                QMessageBox.warning(
-                    self, 
-                    "Error", 
-                    f"Error deleting assistant {assistant.name or assistant.id}: {str(e)}"
-                )
+                QMessageBox.warning(self, "Error", 
+                                  f"Error deleting assistant {assistant.name or assistant.id}: {str(e)}")
         
         # Close progress dialog if it was created
         if num_selected > 1:
@@ -397,11 +525,8 @@ class AssistantsPanel(QWidget):
         
         # Show summary
         if delete_count > 0:
-            QMessageBox.information(
-                self,
-                "Deletion Complete",
-                f"Successfully deleted {delete_count} assistant{'s' if delete_count > 1 else ''}."
-            )
+            QMessageBox.information(self, "Deletion Complete", 
+                                  f"Successfully deleted {delete_count} assistant{'s' if delete_count > 1 else ''}.")
         
         # Refresh list
         self.refresh_assistants()

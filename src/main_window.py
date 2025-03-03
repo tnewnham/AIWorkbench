@@ -1,24 +1,27 @@
+#!/usr/bin/env python
 """
-Main window implementation for the AIWorkbench application.
-This module provides the main application window with all required panels.
+Main window for the OpenAI Chat Interface.
+This module provides the main application window and UI components.
 """
 
 import sys
 import os
 import platform
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QTabWidget, QSplitter, QFrame, QStackedWidget, QStyle
+    QTabWidget, QSplitter, QFrame, QStackedWidget, QStyle, QPushButton
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QSettings
 from PyQt5.QtGui import QIcon, QFont
 
 from src.assistants_panel import AssistantsPanel
 from src.vector_store_panel import VectorStorePanel
 from src.chat_completion_panel import ChatCompletionPanel
-from src.chat_ui_qt import ChatTab, VSCodeStyleHelper, WindowsStyleHelper
+from src.chat_ui_qt import ChatTab, VSCodeStyleHelper
+from src.windows_style_helper import WindowsStyleHelper
 
 class MainWindow(QMainWindow):
     """Main application window"""
@@ -34,6 +37,64 @@ class MainWindow(QMainWindow):
         if platform.system() == "Windows":
             # Wait for window to be created and then set dark title bar
             QTimer.singleShot(100, lambda: WindowsStyleHelper.set_dark_title_bar(int(self.winId())))
+        
+        # Apply additional scrollbar styling to ensure rounded corners
+        self.setStyleSheet(f"""
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR} !important;
+                width: 8px !important;
+                margin: 0px !important;
+                border: none !important;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR} !important;
+                min-height: 30px !important;
+                border: none !important;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR} !important;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px !important;
+                border: none !important;
+                background: none !important;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none !important;
+                border: none !important;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR} !important;
+                height: 8px !important;
+                margin: 0px !important;
+                border: none !important;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR} !important;
+                min-width: 30px !important;
+                border: none !important;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR} !important;
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px !important;
+                border: none !important;
+                background: none !important;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none !important;
+                border: none !important;
+            }}
+            QScrollBar::corner {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR} !important;
+                border: none !important;
+            }}
+        """)
         
         # Main widget and layout
         central_widget = QWidget()
@@ -51,8 +112,8 @@ class MainWindow(QMainWindow):
         splitter.addWidget(left_sidebar)
         splitter.addWidget(self.chat_tab)
         
-        # Set the initial sizes (give more room to the chat tab)
-        splitter.setSizes([500, 700])
+        # Set the initial sizes (give more room to the sidebar)
+        splitter.setSizes([650, 580])
         
         main_layout.addWidget(splitter)
     
@@ -62,20 +123,84 @@ class MainWindow(QMainWindow):
         self.sidebar.setTabPosition(QTabWidget.West)  # Tabs on the left
         self.sidebar.setMovable(True)
         
+        # Set minimum width for the sidebar
+        self.sidebar.setMinimumWidth(300)
+        
         # Add assistant panel
         self.assistants_panel = AssistantsPanel()
         self.sidebar.addTab(self.assistants_panel, "Assistants")
         
-        # Add chat completion panel
-        self.chat_completion_panel = ChatCompletionPanel()
-        self.sidebar.addTab(self.chat_completion_panel, "Chat Completion")
-        
-        # Add vector store panel
+        # Add vector store management panel
         self.vector_store_panel = VectorStorePanel()
-        self.sidebar.addTab(self.vector_store_panel, "Vector Store")
+        self.sidebar.addTab(self.vector_store_panel, "Vector Stores")
         
-        # Set initial tab
-        self.sidebar.setCurrentIndex(0)
+        # Add chat completions panel
+        self.chat_completion_panel = ChatCompletionPanel()
+        self.sidebar.addTab(self.chat_completion_panel, "Chat Models")
+        
+        # Apply scrollbar styling to all panels
+        scrollbar_style = f"""
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR} !important;
+                width: 8px !important;
+                margin: 0px !important;
+                border: none !important;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR} !important;
+                min-height: 30px !important;
+                border: none !important;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR} !important;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px !important;
+                border: none !important;
+                background: none !important;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none !important;
+                border: none !important;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR} !important;
+                height: 8px !important;
+                margin: 0px !important;
+                border: none !important;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR} !important;
+                min-width: 30px !important;
+                border: none !important;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR} !important;
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px !important;
+                border: none !important;
+                background: none !important;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none !important;
+                border: none !important;
+            }}
+            QScrollBar::corner {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR} !important;
+                border: none !important;
+            }}
+        """
+        
+        # Apply style to each panel
+        self.assistants_panel.setStyleSheet(scrollbar_style)
+        self.vector_store_panel.setStyleSheet(scrollbar_style)
+        self.chat_completion_panel.setStyleSheet(scrollbar_style)
+        self.sidebar.setStyleSheet(scrollbar_style)
         
         return self.sidebar
 

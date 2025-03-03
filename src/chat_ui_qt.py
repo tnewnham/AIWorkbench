@@ -16,52 +16,44 @@ import ctypes
 
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QTextEdit, QPushButton, QTabWidget, 
-                           QLabel, QScrollArea, QFrame, QStackedWidget, QSizePolicy, QInputDialog, QDialog, QStyle)
+                           QLabel, QScrollArea, QFrame, QStackedWidget, QSizePolicy, QInputDialog, QDialog, QStyle, QButtonGroup)
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QFont, QColor, QPalette, QIcon
 import markdown2
 
-# Import the necessary components from the existing code
-from src.openai_assistant import (
-    initialize_chat,
-    send_user_message,
-    start_run,
-    poll_run_status_and_submit_outputs,
-    ClientConfig,
-    pretty_print,
-    send_assistant_message
-)
-from src.vector_store_panel import VectorStorePanel
-from src.workflow_manager import WorkflowManager
-from src.signals import global_signals
-from src.assistants_panel import AssistantsPanel
+# Import the WindowsStyleHelper for dark title bars
+from src.windows_style_helper import WindowsStyleHelper
 
-class SignalHandler(QObject):
-    """Signal handler for thread communication"""
-    message_signal = pyqtSignal(str, str, object)
-    enable_input_signal = pyqtSignal()
-
+# VSCode dark theme styling
 class VSCodeStyleHelper:
     """Helper class for Visual Studio Code dark theme styling"""
     # VS Code dark theme colors
-    BG_COLOR = "#1E1E1E"  # Main background
+    BG_COLOR = "#212121"  # Main background
     SIDEBAR_BG_COLOR = "#252526"  # Sidebar background
     TEXT_COLOR = "#D4D4D4"  # Standard text
     ACCENT_COLOR = "#007ACC"  # VS Code blue
     BUTTON_COLOR = "#2D2D30"
     BUTTON_HOVER_COLOR = "#3E3E42"
-    USER_BG_COLOR = "#2D2D30"  # User messages
-    ASSISTANT_BG_COLOR = "#252526"  # Assistant messages
+    USER_BG_COLOR = "#303030"  # User messages
+    ASSISTANT_BG_COLOR = "#212121"  # Assistant messages
     BORDER_COLOR = "#3E3E42"  # Border color
     
     # Scrollbar colors
-    SCROLLBAR_BG_COLOR = "#1E1E1E"  # Same as main background
+    SCROLLBAR_BG_COLOR = "#212121"  # Same as main background
     SCROLLBAR_HANDLE_COLOR = "#424242"  # Subtle grey
     SCROLLBAR_HANDLE_HOVER_COLOR = "#686868"  # Lighter grey on hover
+    
+    # Border radius values
+    LARGE_RADIUS = "10px"    # Used for panels and scrollbars
+    MEDIUM_RADIUS = "8px"    # Used for mid-size elements
+    SMALL_RADIUS = "6px"     # Used for smaller elements
     
     @staticmethod
     def apply_styles(app):
         """Apply VS Code dark theme to the application"""
+        from PyQt5.QtGui import QPalette, QColor
+        from PyQt5.QtCore import Qt
+        
         app.setStyle("Fusion")
         
         # Set the dark palette
@@ -81,84 +73,162 @@ class VSCodeStyleHelper:
         palette.setColor(QPalette.HighlightedText, Qt.black)
         app.setPalette(palette)
         
-        # Add custom stylesheet for scrollbars
-        app.setStyleSheet("""
-            QScrollBar:vertical {
-                background-color: transparent;
-                width: 8px;
-                margin: 0px;
-                border-radius: 4px;
-            }
+        # Add custom stylesheet for scrollbars - using f-strings for better syntax
+        app.setStyleSheet(f"""
+            /* Scrollbar styling */
+            QScrollBar:vertical,
+            QTextEdit QScrollBar:vertical,
+            QTableWidget QScrollBar:vertical,
+            QListWidget QScrollBar:vertical,
+            QTreeView QScrollBar:vertical,
+            QScrollArea QScrollBar:vertical,
+            *::vertical-scrollbar {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR} !important;
+                width: 8px !important;
+                margin: 0px !important;
+                border: none !important;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+            }}
             
-            QScrollBar::handle:vertical {
-                background-color: """ + VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR + """;
-                min-height: 30px;
-                border-radius: 4px;
-            }
+            QScrollBar::handle:vertical,
+            QTextEdit QScrollBar::handle:vertical, 
+            QTableWidget QScrollBar::handle:vertical,
+            QListWidget QScrollBar::handle:vertical,
+            QTreeView QScrollBar::handle:vertical,
+            QScrollArea QScrollBar::handle:vertical,
+            *::vertical-scrollbar-handle {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR} !important;
+                min-height: 30px !important;
+                border: none !important;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+            }}
             
-            QScrollBar::handle:vertical:hover {
-                background-color: """ + VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR + """;
-            }
+            QScrollBar::handle:vertical:hover,
+            QTextEdit QScrollBar::handle:vertical:hover,
+            QTableWidget QScrollBar::handle:vertical:hover,
+            QListWidget QScrollBar::handle:vertical:hover,
+            QTreeView QScrollBar::handle:vertical:hover,
+            QScrollArea QScrollBar::handle:vertical:hover,
+            *::vertical-scrollbar-handle:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR} !important;
+            }}
             
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+            QTextEdit QScrollBar::add-line:vertical, QTextEdit QScrollBar::sub-line:vertical,
+            QTableWidget QScrollBar::add-line:vertical, QTableWidget QScrollBar::sub-line:vertical,
+            QListWidget QScrollBar::add-line:vertical, QListWidget QScrollBar::sub-line:vertical,
+            QTreeView QScrollBar::add-line:vertical, QTreeView QScrollBar::sub-line:vertical,
+            QScrollArea QScrollBar::add-line:vertical, QScrollArea QScrollBar::sub-line:vertical {{
+                height: 0px !important;
+            }}
             
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: none;
-            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
+            QTextEdit QScrollBar::add-page:vertical, QTextEdit QScrollBar::sub-page:vertical,
+            QTableWidget QScrollBar::add-page:vertical, QTableWidget QScrollBar::sub-page:vertical,
+            QListWidget QScrollBar::add-page:vertical, QListWidget QScrollBar::sub-page:vertical,
+            QTreeView QScrollBar::add-page:vertical, QTreeView QScrollBar::sub-page:vertical,
+            QScrollArea QScrollBar::add-page:vertical, QScrollArea QScrollBar::sub-page:vertical {{
+                background: none !important;
+            }}
             
-            QScrollBar:horizontal {
-                background-color: transparent;
-                height: 8px;
-                margin: 0px;
-                border-radius: 4px;
-            }
+            /* Horizontal scrollbars */
+            QScrollBar:horizontal,
+            QTextEdit QScrollBar:horizontal,
+            QTableWidget QScrollBar:horizontal,
+            QListWidget QScrollBar:horizontal,
+            QTreeView QScrollBar:horizontal,
+            QScrollArea QScrollBar:horizontal,
+            *::horizontal-scrollbar {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR} !important;
+                height: 8px !important;
+                margin: 0px !important;
+                border: none !important;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+            }}
             
-            QScrollBar::handle:horizontal {
-                background-color: """ + VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR + """;
-                min-width: 30px;
-                border-radius: 4px;
-            }
+            QScrollBar::handle:horizontal,
+            QTextEdit QScrollBar::handle:horizontal,
+            QTableWidget QScrollBar::handle:horizontal,
+            QListWidget QScrollBar::handle:horizontal,
+            QTreeView QScrollBar::handle:horizontal,
+            QScrollArea QScrollBar::handle:horizontal,
+            *::horizontal-scrollbar-handle {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR} !important;
+                min-width: 30px !important;
+                border: none !important;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS} !important;
+            }}
             
-            QScrollBar::handle:horizontal:hover {
-                background-color: """ + VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR + """;
-            }
+            QScrollBar::handle:horizontal:hover,
+            QTextEdit QScrollBar::handle:horizontal:hover,
+            QTableWidget QScrollBar::handle:horizontal:hover,
+            QListWidget QScrollBar::handle:horizontal:hover,
+            QTreeView QScrollBar::handle:horizontal:hover,
+            QScrollArea QScrollBar::handle:horizontal:hover,
+            *::horizontal-scrollbar-handle:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR} !important;
+            }}
             
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                width: 0px;
-            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
+            QTextEdit QScrollBar::add-line:horizontal, QTextEdit QScrollBar::sub-line:horizontal,
+            QTableWidget QScrollBar::add-line:horizontal, QTableWidget QScrollBar::sub-line:horizontal,
+            QListWidget QScrollBar::add-line:horizontal, QListWidget QScrollBar::sub-line:horizontal,
+            QTreeView QScrollBar::add-line:horizontal, QTreeView QScrollBar::sub-line:horizontal,
+            QScrollArea QScrollBar::add-line:horizontal, QScrollArea QScrollBar::sub-line:horizontal {{
+                width: 0px !important;
+            }}
             
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-                background: none;
-            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal,
+            QTextEdit QScrollBar::add-page:horizontal, QTextEdit QScrollBar::sub-page:horizontal,
+            QTableWidget QScrollBar::add-page:horizontal, QTableWidget QScrollBar::sub-page:horizontal,
+            QListWidget QScrollBar::add-page:horizontal, QListWidget QScrollBar::sub-page:horizontal,
+            QTreeView QScrollBar::add-page:horizontal, QTreeView QScrollBar::sub-page:horizontal,
+            QScrollArea QScrollBar::add-page:horizontal, QScrollArea QScrollBar::sub-page:horizontal {{
+                background: none !important;
+            }}
+            
+            /* Menu styling */
+            QMenu {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 5px;
+            }}
+            
+            QMenu::item {{
+                padding: 5px 30px 5px 20px;
+                border-radius: {VSCodeStyleHelper.SMALL_RADIUS};
+            }}
+            
+            QMenu::item:selected {{
+                background-color: {VSCodeStyleHelper.ACCENT_COLOR};
+                color: white;
+            }}
         """)
 
-class WindowsStyleHelper:
-    """Helper for Windows-specific window styling"""
-    
-    @staticmethod
-    def set_dark_title_bar(hwnd):
-        """Enable dark title bar on Windows 10+"""
-        if platform.system() == "Windows":
-            try:
-                # Windows 10 1809 or later
-                DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-                
-                # Tell Windows to use dark mode for the title bar
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                    hwnd, 
-                    DWMWA_USE_IMMERSIVE_DARK_MODE, 
-                    ctypes.byref(ctypes.c_int(1)), 
-                    ctypes.sizeof(ctypes.c_int)
-                )
-                return True
-            except Exception:
-                return False
-        return False
+# Import the necessary components from the existing code
+from src.openai_assistant import (
+    initialize_chat,
+    send_user_message,
+    start_run,
+    poll_run_status_and_submit_outputs,
+    ClientConfig,
+    pretty_print,
+    send_assistant_message
+)
+from src.workflow_manager import WorkflowManager
+from src.signals import global_signals
+from src.vector_store_panel import VectorStorePanel
+from src.assistants_panel import AssistantsPanel
+
+class SignalHandler(QObject):
+    """Signal handler for thread communication"""
+    message_signal = pyqtSignal(str, str, object)
+    enable_input_signal = pyqtSignal()
 
 class MessageWidget(QFrame):
-    """Widget for displaying a chat message"""
+    """Widget to display a chat message with appropriate styling based on role"""
     
     def __init__(self, role, content, formatted_content=None, parent=None):
         super().__init__(parent)
@@ -170,12 +240,15 @@ class MessageWidget(QFrame):
         bg_color = VSCodeStyleHelper.USER_BG_COLOR if is_user else VSCodeStyleHelper.ASSISTANT_BG_COLOR
         text_color = VSCodeStyleHelper.TEXT_COLOR
         
+        # Set border only for user messages, not for assistant messages
+        border_style = f"border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};" if is_user else "border: none;"
+        
         # Apply styling
         self.setStyleSheet(f"""
             MessageWidget {{
                 background-color: {bg_color};
-                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
-                border-radius: 4px;
+                {border_style}
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
                 margin: 5px;
                 padding: 5px;
             }}
@@ -187,7 +260,26 @@ class MessageWidget(QFrame):
                 background-color: {bg_color};
                 color: {text_color};
                 border: none;
-                border-radius: 2px;
+                padding: 0px;
+                margin: 0px;
+                border-radius: 0px;
+            }}
+            QTextEdit QScrollBar:vertical {{
+                background-color: {bg_color};
+                width: 10px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+            }}
+            QTextEdit QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 20px;
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+            }}
+            QTextEdit QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QTextEdit QScrollBar::add-line:vertical, QTextEdit QScrollBar::sub-line:vertical {{
+                height: 0px;
             }}
         """)
         
@@ -210,6 +302,10 @@ class MessageWidget(QFrame):
             content_widget.setFont(QFont("Courier New", 10))
             content_widget.setText(json_str)
             
+            # Remove any additional frame or border
+            content_widget.setFrameShape(QFrame.NoFrame)
+            content_widget.setLineWidth(0)
+            
             # Calculate approximate height based on content
             line_count = json_str.count('\n') + 1
             content_height = min(max(line_count * 20, 100), 500)  # Between 100 and 500 pixels
@@ -231,6 +327,10 @@ class MessageWidget(QFrame):
                 content_widget.setReadOnly(True)
                 content_widget.setHtml(html_content)
                 
+                # Remove any additional frame or border
+                content_widget.setFrameShape(QFrame.NoFrame)
+                content_widget.setLineWidth(0)
+                
                 # Calculate height based on content
                 line_count = content.count('\n') + 1
                 content_height = min(max(line_count * 20, 100), 600)  # Between 100 and 600 pixels
@@ -247,6 +347,10 @@ class MessageWidget(QFrame):
                 content_widget = QTextEdit()
                 content_widget.setReadOnly(True)
                 content_widget.setText(content)
+                
+                # Remove any additional frame or border
+                content_widget.setFrameShape(QFrame.NoFrame)
+                content_widget.setLineWidth(0)
                 
                 # Calculate height based on content
                 line_count = content.count('\n') + 1
@@ -281,6 +385,9 @@ class ChatArea(QScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWidgetResizable(True)
+        
+        # Remove the border frame
+        self.setFrameShape(QFrame.NoFrame)
         
         # Container widget for messages
         self.container = QWidget()
@@ -324,13 +431,24 @@ class SidePanel(QWidget):
     
     def __init__(self, position, parent=None):
         super().__init__(parent)
+        is_right_panel = position == "right"
         
-        # Check if this is the right panel
-        is_right_panel = position.lower() == "right"
+        # Create a container widget for the entire panel
+        self.container = QWidget()
+        self.container.setStyleSheet(f"""
+            background-color: {VSCodeStyleHelper.BG_COLOR};
+            border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+            border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+        """)
+        
+        # Main layout for the panel
+        main_container_layout = QVBoxLayout(self.container)
+        main_container_layout.setContentsMargins(10, 10, 10, 10)
         
         # Main layout for the panel
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 10, 0, 10)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.addWidget(self.container)
         
         # Create a horizontal layout for buttons and content
         panel_layout = QHBoxLayout()
@@ -347,11 +465,20 @@ class SidePanel(QWidget):
         button_widget = QWidget()
         button_widget.setLayout(self.button_layout)
         button_widget.setFixedWidth(120)  # Make wider to accommodate "Vector Stores" text
-        button_widget.setStyleSheet(f"background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};")
+        button_widget.setStyleSheet(f"""
+            background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+            border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+            border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+            padding: 5px;
+        """)
         
         # Create stacked widget for content
         self.content_stack = QStackedWidget()
-        self.content_stack.setStyleSheet(f"background-color: {VSCodeStyleHelper.BG_COLOR};")
+        self.content_stack.setStyleSheet(f"""
+            background-color: {VSCodeStyleHelper.BG_COLOR};
+            border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+            border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+        """)
         
         # Add the button panel and content stack to the panel layout
         # For right panel, add content first then buttons
@@ -362,10 +489,23 @@ class SidePanel(QWidget):
             panel_layout.addWidget(button_widget)
             panel_layout.addWidget(self.content_stack)
         
-        # Add panel layout to main layout
-        main_layout.addLayout(panel_layout)
+        # Add panel layout to main container layout
+        main_container_layout.addLayout(panel_layout)
         
-        # Create buttons and content pages
+        # Keep track of buttons and their indexes
+        self.buttons = []
+        self.active_index = -1
+        
+        # Set default width
+        self.setMinimumWidth(250)
+        
+        # When button is clicked, show the corresponding page
+        self.button_group = QButtonGroup(self)
+        self.button_group.buttonClicked.connect(
+            lambda button: self._on_button_clicked(self.buttons.index(button))
+        )
+        
+        # Add default pages
         self.add_page("Settings", f"{position} Settings Panel")
         self.add_page("History", f"{position} History Panel")
         self.add_page("Help", f"{position} Help Panel")
@@ -376,71 +516,189 @@ class SidePanel(QWidget):
             button.setChecked(True)
     
     def add_page(self, title, content_text):
-        """Add a page to the side panel with a button and content"""
-        # Create the button
+        """Add a new page with text content to the panel"""
+        # Create button
         button = QPushButton(title)
         button.setCheckable(True)
-        button.setFixedHeight(40)
+        button.setMinimumHeight(40)
         
-        # Apply the side-button class for our special styling
-        button.setProperty("class", "side-button")
+        # Add consistent styling to the button
+        button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                padding: 8px;
+                text-align: left;
+                margin: 2px 0px;
+            }}
+            QPushButton:checked {{
+                background-color: {VSCodeStyleHelper.ACCENT_COLOR};
+                color: white;
+                font-weight: bold;
+            }}
+            QPushButton:hover:!checked {{
+                background-color: {VSCodeStyleHelper.BORDER_COLOR};
+            }}
+        """)
         
-        # Create the content widget
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        
-        # Create content label
-        label = QLabel(content_text)
-        label.setAlignment(Qt.AlignCenter)
-        label.setFont(QFont("Segoe UI", 12))
-        
-        content_layout.addWidget(label)
-        content_layout.setAlignment(Qt.AlignCenter)
-        
-        # Add button and content to their respective containers
+        # Add to button layout
         self.button_layout.addWidget(button)
-        index = self.content_stack.addWidget(content)
+        button_index = len(self.buttons)
+        self.buttons.append(button)
         
-        # Connect button click to show the corresponding content
-        button.clicked.connect(lambda checked, i=index: self._on_button_clicked(i))
+        # Connect button to switch pages
+        button.clicked.connect(lambda checked, idx=button_index: self._on_button_clicked(idx))
+        
+        # Create content widget
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        
+        # Create text area for content
+        content_area = QTextEdit()
+        content_area.setReadOnly(True)
+        content_area.setPlainText(content_text)
+        # Apply consistent style to the content area
+        content_area.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 8px;
+            }}
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                width: 12px;
+                margin: 3px 3px 3px 3px;
+                border-radius: {VSCodeStyleHelper.SMALL_RADIUS};
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 20px;
+                border-radius: {VSCodeStyleHelper.SMALL_RADIUS};
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+        """)
+        content_layout.addWidget(content_area)
+        
+        # Add to stack
+        self.content_stack.addWidget(content_widget)
+        
+        # If this is the first button, activate it
+        if button_index == 0:
+            button.setChecked(True)
+            self.active_index = 0
+            self.content_stack.setCurrentIndex(0)
+        
+        return button_index
     
     def _on_button_clicked(self, index):
-        """Handle button click to show the corresponding content and update button states"""
-        # Uncheck all buttons
-        for i in range(self.button_layout.count()):
-            btn = self.button_layout.itemAt(i).widget()
-            btn.setChecked(False)
+        """Handle button clicks to switch content pages"""
+        # First uncheck all buttons
+        for i, btn in enumerate(self.buttons):
+            if i != index:
+                btn.setChecked(False)
         
-        # Check the clicked button
-        button = self.button_layout.itemAt(index).widget()
-        button.setChecked(True)
+        # Ensure the clicked button is checked
+        self.buttons[index].setChecked(True)
         
         # Show the corresponding content
         self.content_stack.setCurrentIndex(index)
-
+        self.active_index = index
+    
     def add_custom_page(self, title, widget):
-        """Add a custom widget as a page"""
-        # Create the button
+        """Add a custom widget page to the panel"""
+        # Create button
         button = QPushButton(title)
         button.setCheckable(True)
-        button.setFixedHeight(40)
+        button.setMinimumHeight(40)
         
-        # Apply the side-button class for our special styling
-        button.setProperty("class", "side-button")
+        # Add consistent styling to the button
+        button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                padding: 8px;
+                text-align: left;
+                margin: 2px 0px;
+            }}
+            QPushButton:checked {{
+                background-color: {VSCodeStyleHelper.ACCENT_COLOR};
+                color: white;
+                font-weight: bold;
+            }}
+            QPushButton:hover:!checked {{
+                background-color: {VSCodeStyleHelper.BORDER_COLOR};
+            }}
+        """)
         
-        # Add button and content to their respective containers
+        # Add to button layout
         self.button_layout.addWidget(button)
-        index = self.content_stack.addWidget(widget)
+        button_index = len(self.buttons)
+        self.buttons.append(button)
         
-        # Connect button click to show the corresponding content
-        button.clicked.connect(lambda checked, i=index: self._on_button_clicked(i))
+        # Connect button to switch pages
+        button.clicked.connect(lambda checked, idx=button_index: self._on_button_clicked(idx))
+        
+        # Add to stack
+        self.content_stack.addWidget(widget)
+        
+        # If this is the first button, activate it
+        if button_index == 0:
+            button.setChecked(True)
+            self.active_index = 0
+            self.content_stack.setCurrentIndex(0)
+        
+        return button_index
 
 class ChatInputTextEdit(QTextEdit):
-    """Custom QTextEdit that sends message on Ctrl+Enter"""
+    """Custom text edit for chat input with Ctrl+Enter handling"""
     
     def __init__(self, send_callback, parent=None):
         super().__init__(parent)
         self.send_callback = send_callback
+        # Apply VSCode-style rounded corners
+        self.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {VSCodeStyleHelper.USER_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 8px;
+            }}
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                width: 12px;
+                margin: 3px 3px 3px 3px;
+                border-radius: {VSCodeStyleHelper.SMALL_RADIUS};
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 20px;
+                border-radius: {VSCodeStyleHelper.SMALL_RADIUS};
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+        """)
     
     def keyPressEvent(self, event):
         """Handle key press events"""
@@ -467,16 +725,42 @@ class ChatTab(QWidget):
         
         # Input area
         input_layout = QHBoxLayout()
+        # Add margins to make the input box less wide, matching user message boxes
+        input_layout.setContentsMargins(13, 0, 13, 0)
         
         # Use our custom TextEdit with a callback to the send method
         self.input_box = ChatInputTextEdit(self._send_message)
         self.input_box.setMaximumHeight(80)
         self.input_box.setPlaceholderText("Type your message here... (Ctrl+Enter to send)")
+        # Set the input box background color to match user message blocks
+        self.input_box.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {VSCodeStyleHelper.USER_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 5px;
+            }}
+        """)
         input_layout.addWidget(self.input_box)
         
         self.send_button = QPushButton("Send")
         self.send_button.setObjectName("send_button")  # Set object name for CSS targeting
         self.send_button.clicked.connect(self._send_message)
+        # Make the send button narrower
+        self.send_button.setFixedWidth(60)
+        self.send_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {VSCodeStyleHelper.BUTTON_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: none;
+                border-radius: {VSCodeStyleHelper.SMALL_RADIUS};
+                padding: 5px;
+            }}
+            QPushButton:hover {{
+                background-color: {VSCodeStyleHelper.BUTTON_HOVER_COLOR};
+            }}
+        """)
         input_layout.addWidget(self.send_button)
         
         layout.addLayout(input_layout)
@@ -677,12 +961,12 @@ class ChatTab(QWidget):
                         self.current_completion_config = chat_completion_config.get_config()
                         
                     # Add system message from current config
-                    if self.current_completion_config and "system_message" in self.current_completion_config:
-                        self.chat_history.add_message("system", self.current_completion_config["system_message"])
-                    
-                    self.signal_handler.message_signal.emit(
-                        "system", "Chat history initialized for completion mode.", None
-                    )
+                        if self.current_completion_config and "system_message" in self.current_completion_config:
+                            self.chat_history.add_message("system", self.current_completion_config["system_message"])
+                        
+                        self.signal_handler.message_signal.emit(
+                            "system", "Chat history initialized for completion mode.", None
+                        )
                 except Exception as e:
                     self.signal_handler.message_signal.emit(
                         "system", f"Error: Could not initialize chat history. {str(e)}", None
@@ -1273,6 +1557,8 @@ class SettingsPanel(QWidget):
         current_value = os.getenv(env_var, "")
         text_field.setText(current_value)
         
+        text_field.setStyleSheet("border-radius: 10px;")
+        
         field_layout.addWidget(text_field)
         
         # Store reference to field
@@ -1342,12 +1628,13 @@ class AnalysisPromptDialog(QDialog):
                 background-color: {VSCodeStyleHelper.BG_COLOR};
                 color: {VSCodeStyleHelper.TEXT_COLOR};
                 border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
             }}
             QTextEdit {{
                 background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
                 color: {VSCodeStyleHelper.TEXT_COLOR};
                 border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
-                border-radius: 3px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
                 padding: 8px;
                 font-size: 13px;
                 selection-background-color: {VSCodeStyleHelper.ACCENT_COLOR};
@@ -1356,10 +1643,8 @@ class AnalysisPromptDialog(QDialog):
                 background-color: {VSCodeStyleHelper.BUTTON_COLOR};
                 color: {VSCodeStyleHelper.TEXT_COLOR};
                 border: none;
-                border-radius: 2px;
+                border-radius: {VSCodeStyleHelper.SMALL_RADIUS};
                 padding: 8px 16px;
-                margin: 5px;
-                min-width: 80px;
             }}
             QPushButton:hover {{
                 background-color: {VSCodeStyleHelper.BUTTON_HOVER_COLOR};

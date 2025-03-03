@@ -19,6 +19,20 @@ from PyQt5.QtGui import QIcon, QFont, QColor, QCursor
 from .chat_completion_config import chat_completion_config
 from .signals import global_signals
 
+# Define VSCodeStyleHelper for consistent styling
+class VSCodeStyleHelper:
+    SIDEBAR_BG_COLOR = "#252526"
+    BG_COLOR = "#212121"
+    TEXT_COLOR = "#D4D4D4"
+    ACCENT_COLOR = "#007ACC"
+    BORDER_COLOR = "#3E3E42"
+    LARGE_RADIUS = "10px"
+    MEDIUM_RADIUS = "8px"
+    SMALL_RADIUS = "6px"
+    SCROLLBAR_BG_COLOR = "#212121"
+    SCROLLBAR_HANDLE_COLOR = "#424242"
+    SCROLLBAR_HANDLE_HOVER_COLOR = "#686868"
+
 class ChatCompletionPanel(QWidget):
     """Panel for managing chat completion configurations"""
     
@@ -57,6 +71,16 @@ class ChatCompletionPanel(QWidget):
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("Search by name or description...")
         self.search_box.textChanged.connect(self._filter_configurations)
+        # Add rounded corners to search box
+        self.search_box.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+                padding: 5px;
+            }}
+        """)
         search_layout.addWidget(self.search_box)
         
         main_layout.addLayout(search_layout)
@@ -73,6 +97,64 @@ class ChatCompletionPanel(QWidget):
         self.config_list = QListWidget()
         self.config_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.config_list.itemClicked.connect(self.show_config_details)
+        # Add rounded corners to the list
+        self.config_list.setStyleSheet(f"""
+            QListWidget {{
+                background-color: {VSCodeStyleHelper.BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 5px;
+            }}
+            QListWidget::item {{
+                border-radius: {VSCodeStyleHelper.SMALL_RADIUS};
+                padding: 5px;
+            }}
+            QListWidget::item:selected {{
+                background-color: {VSCodeStyleHelper.ACCENT_COLOR};
+                color: white;
+            }}
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                width: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                height: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-width: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
         list_layout.addWidget(self.config_list)
         
         # Button container
@@ -105,6 +187,56 @@ class ChatCompletionPanel(QWidget):
         
         self.details_text = QTextEdit()
         self.details_text.setReadOnly(True)
+        # Apply rounded style to the details text area
+        self.details_text.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {VSCodeStyleHelper.SIDEBAR_BG_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
+                padding: 8px;
+            }}
+            QScrollBar:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                width: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-height: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_BG_COLOR};
+                height: 8px;
+                margin: 0px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
+                min-width: 30px;
+                border-radius: {VSCodeStyleHelper.MEDIUM_RADIUS};
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
         details_layout.addWidget(self.details_text)
         
         # Add details container to splitter
