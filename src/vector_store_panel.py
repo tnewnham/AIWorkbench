@@ -583,6 +583,9 @@ class VectorStorePanel(QWidget):
         splitter.addWidget(details_group)
         splitter.addWidget(files_group)
         
+        # Set default sizes so the bottom portion starts smaller
+        splitter.setSizes([300, 180, 400])
+        
         layout.addWidget(splitter)
         return tab
     
@@ -829,6 +832,7 @@ class VectorStorePanel(QWidget):
         # Add widgets to splitter
         splitter.addWidget(self.files_table)
         splitter.addWidget(details_group)
+        splitter.setSizes([400, 130])
         
         layout.addWidget(splitter)
         return tab

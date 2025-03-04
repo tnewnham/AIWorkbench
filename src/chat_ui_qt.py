@@ -352,8 +352,7 @@ class MessageWidget(QFrame):
                     # Better height calculation for HTML content
                     content_widget.document().setDocumentMargin(0)
                     content_widget.document().adjustSize()
-                    line_count = content.count('\n') + 1
-                    content_widget.setMinimumHeight(max(content_widget.document().size().height() + 20, line_count * 16))
+                    
                     # Allow user to select and copy text from the label:
                     content_widget.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
                 
@@ -731,6 +730,34 @@ class ChatTab(QWidget):
         # Set up layout
         layout = QVBoxLayout(self)
         
+        # Create a horizontal layout for the 'Refresh Chat' button at the top-right
+        top_button_layout = QHBoxLayout()
+        
+        # Create and style the Refresh Chat button 
+        self.refresh_button = QPushButton("Refresh Chat")
+        self.refresh_button.setFixedWidth(100)  # Narrower width
+        self.refresh_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {VSCodeStyleHelper.BUTTON_COLOR};
+                color: {VSCodeStyleHelper.TEXT_COLOR};
+                border: 1px solid {VSCodeStyleHelper.BORDER_COLOR};
+                border-radius: {VSCodeStyleHelper.SMALL_RADIUS};
+                padding: 5px;
+            }}
+            QPushButton:hover {{
+                background-color: {VSCodeStyleHelper.BUTTON_HOVER_COLOR};
+            }}
+        """)
+        
+        self.refresh_button.clicked.connect(self._refresh_chat)
+        
+        # Align it to the right
+        top_button_layout.addStretch()
+        top_button_layout.addWidget(self.refresh_button)
+        
+        # Add the top_button_layout at the top of the main layout
+        layout.addLayout(top_button_layout)
+        
         # Chat display area
         self.chat_display = ChatArea()
         layout.addWidget(self.chat_display)
@@ -967,7 +994,7 @@ class ChatTab(QWidget):
                     if not self.current_completion_config:
                         self.current_completion_config = chat_completion_config.get_config()
                         
-                    # Add system message from current config
+                        # Add system message from current config
                         if self.current_completion_config and "system_message" in self.current_completion_config:
                             self.chat_history.add_message("system", self.current_completion_config["system_message"])
                         
@@ -1066,20 +1093,20 @@ class ChatTab(QWidget):
                         if not self.current_completion_config:
                             self.current_completion_config = chat_completion_config.get_config()
                             
-                        # Add system message from current config
-                        if self.current_completion_config and "system_message" in self.current_completion_config:
-                            self.chat_history.add_message("system", self.current_completion_config["system_message"])
+                            # Add system message from current config
+                            if self.current_completion_config and "system_message" in self.current_completion_config:
+                                self.chat_history.add_message("system", self.current_completion_config["system_message"])
+                            
+                            # Log success
+                            self.signal_handler.message_signal.emit(
+                                "system", "Chat history initialized for completion mode.", None
+                            )
                         
-                        # Log success
-                        self.signal_handler.message_signal.emit(
-                            "system", "Chat history initialized for completion mode.", None
-                        )
-                    
-                    # Import all previous messages from the thread if available (optional future enhancement)
-                    # if self.chat_thread:
-                    #     # This would require additional implementation to import history
-                    #     pass
-                        
+                        # Import all previous messages from the thread if available (optional future enhancement)
+                        # if self.chat_thread:
+                        #     # This would require additional implementation to import history
+                        #     pass
+                            
                 except Exception as e:
                     import traceback
                     self.signal_handler.message_signal.emit(
@@ -1503,6 +1530,20 @@ class ChatTab(QWidget):
             self.signal_handler.message_signal.emit(
                 "system", "Chat assistant reset to default", None
             )
+
+    def _refresh_chat(self):
+        """Refresh the chat by re-initializing the chat thread and completion history."""
+        # Reset the chat thread used by assistant mode
+        self.chat_thread = None
+        
+        # Reset the chat history used by completion mode
+        self.chat_history = None
+        
+        # Clear messages in the UI (optional)
+        self.chat_display.clear_chat()
+        
+        # Start a new thread to (re)initialize chat
+        threading.Thread(target=self._initialize_chat, daemon=True).start()
 
 class SettingsPanel(QWidget):
     """Panel for viewing and editing assistant configuration"""

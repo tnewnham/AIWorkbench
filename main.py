@@ -104,11 +104,7 @@ def main():
             console.print(f"Error loading GUI: {e}", style="bold red")
             console.print("Falling back to terminal interface.", style="bold yellow")
             from src.terminal_interface import interactive_chat_session
-            interactive_chat_session()
-
-    
-
-        
+            interactive_chat_session()        
 
 if __name__ == "__main__":
     main() 

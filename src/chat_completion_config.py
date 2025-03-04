@@ -19,9 +19,9 @@ console = Console()
 DEFAULT_CONFIGS = {
     "default": {
         "name": "Default Chat Completion",
-        "model": "gpt-4o",
+        "model": "gpt-4.5-preview",
         "temperature": 0.7,
-        "max_tokens": 2000,
+        "max_tokens": 16384,
         "top_p": 1.0,
         "frequency_penalty": 0.0,
         "presence_penalty": 0.0,
@@ -29,9 +29,9 @@ DEFAULT_CONFIGS = {
     },
     "developer": {
         "name": "Developer Assistant",
-        "model": "gpt-4o",
+        "model": "gpt-4.5-preview",
         "temperature": 0.2,
-        "max_tokens": 4000,
+        "max_tokens": 16384,
         "top_p": 1.0,
         "frequency_penalty": 0.0,
         "presence_penalty": 0.0,
@@ -39,9 +39,9 @@ DEFAULT_CONFIGS = {
     },
     "concise": {
         "name": "Concise Assistant",
-        "model": "gpt-4o",
+        "model": "gpt-4.5-preview",
         "temperature": 0.3,
-        "max_tokens": 1000,
+        "max_tokens": 16384,
         "top_p": 1.0,
         "frequency_penalty": 0.0,
         "presence_penalty": 0.0,
@@ -49,9 +49,9 @@ DEFAULT_CONFIGS = {
     },
     "creative": {
         "name": "Creative Assistant",
-        "model": "gpt-4o",
+        "model": "gpt-4.5-preview",
         "temperature": 1.0,
-        "max_tokens": 3000,
+        "max_tokens": 16384,
         "top_p": 1.0,
         "frequency_penalty": 0.2,
         "presence_penalty": 0.2,
