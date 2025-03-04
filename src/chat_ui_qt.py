@@ -282,11 +282,7 @@ class MessageWidget(QFrame):
         # Create layout with minimal spacing
         layout = QVBoxLayout(self)
         layout.setSpacing(0)
-        # Increase bottom padding from 2px to 8px, especially for user messages
-        if is_user:
-            layout.setContentsMargins(5, 2, 5, 6)  # Left, Top, Right, Bottom
-        else:
-            layout.setContentsMargins(5, 2, 5, 2)  # Keep original padding for assistant messages
+        layout.setContentsMargins(5, 2, 5, 2)
         
         # Add role label
         role_label = QLabel(f"{role.upper()}:")
@@ -321,6 +317,8 @@ class MessageWidget(QFrame):
                 content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 # Ensure label expands to fit all text
                 content_widget.setMinimumHeight(line_count * 16)
+                # Allow user to select and copy text from the label:
+                content_widget.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
             
             layout.addWidget(content_widget)
             
@@ -356,6 +354,8 @@ class MessageWidget(QFrame):
                     content_widget.document().adjustSize()
                     line_count = content.count('\n') + 1
                     content_widget.setMinimumHeight(max(content_widget.document().size().height() + 20, line_count * 16))
+                    # Allow user to select and copy text from the label:
+                    content_widget.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
                 
                 layout.addWidget(content_widget)
                 
@@ -366,6 +366,8 @@ class MessageWidget(QFrame):
                 content_widget.setTextFormat(Qt.PlainText)
                 content_widget.setWordWrap(True)
                 content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                # Allow user to select and copy text from the label:
+                content_widget.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
                 
                 layout.addWidget(content_widget)
         
@@ -847,12 +849,7 @@ class ChatTab(QWidget):
                 )
             
             # Add welcome message
-            welcome_msg = """
-            Hello, I pass butter. 
-            
-            I'm in Assistant API mode by default, but you can switch to Chat Completion API mode 
-            through the Chat Completion panel.
-            """
+            welcome_msg = """Hello, I pass butter."""
             self.signal_handler.message_signal.emit("assistant", welcome_msg, None)
             
         except Exception as e:
@@ -970,7 +967,7 @@ class ChatTab(QWidget):
                     if not self.current_completion_config:
                         self.current_completion_config = chat_completion_config.get_config()
                         
-                        # Add system message from current config
+                    # Add system message from current config
                         if self.current_completion_config and "system_message" in self.current_completion_config:
                             self.chat_history.add_message("system", self.current_completion_config["system_message"])
                         
