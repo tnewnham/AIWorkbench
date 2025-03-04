@@ -245,8 +245,8 @@ class MessageWidget(QFrame):
     
     def __init__(self, role, content, formatted_content=None, parent=None):
         super().__init__(parent)
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setFrameShadow(QFrame.Raised)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setFrameShadow(QFrame.Plain)
         
         # Set styling based on role
         is_user = role.lower() == "user"
@@ -262,8 +262,8 @@ class MessageWidget(QFrame):
                 background-color: {bg_color};
                 {border_style}
                 border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
-                margin: 5px;
-                padding: 5px;
+                margin: 2px;
+                padding: 2px;
             }}
             QLabel {{
                 color: {text_color};
@@ -277,31 +277,20 @@ class MessageWidget(QFrame):
                 margin: 0px;
                 border-radius: 0px;
             }}
-            QTextEdit QScrollBar:vertical {{
-                background-color: {bg_color};
-                width: 10px;
-                margin: 0px;
-                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
-            }}
-            QTextEdit QScrollBar::handle:vertical {{
-                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_COLOR};
-                min-height: 20px;
-                border-radius: {VSCodeStyleHelper.LARGE_RADIUS};
-            }}
-            QTextEdit QScrollBar::handle:vertical:hover {{
-                background-color: {VSCodeStyleHelper.SCROLLBAR_HANDLE_HOVER_COLOR};
-            }}
-            QTextEdit QScrollBar::add-line:vertical, QTextEdit QScrollBar::sub-line:vertical {{
-                height: 0px;
-            }}
         """)
         
-        # Create layout
+        # Create layout with minimal spacing
         layout = QVBoxLayout(self)
+        layout.setSpacing(0)
+        # Increase bottom padding from 2px to 8px, especially for user messages
+        if is_user:
+            layout.setContentsMargins(5, 2, 5, 6)  # Left, Top, Right, Bottom
+        else:
+            layout.setContentsMargins(5, 2, 5, 2)  # Keep original padding for assistant messages
         
         # Add role label
         role_label = QLabel(f"{role.upper()}:")
-        role_label.setFont(QFont("Arial", 10, QFont.Bold))
+        role_label.setFont(QFont("Arial", 9, QFont.Bold))
         layout.addWidget(role_label)
         
         # Process and add content
@@ -310,23 +299,28 @@ class MessageWidget(QFrame):
             json_content = json.loads(content)
             json_str = json.dumps(json_content, indent=2)
             
-            content_widget = QTextEdit()
-            content_widget.setReadOnly(True)
-            content_widget.setFont(QFont("Courier New", 10))
-            content_widget.setText(json_str)
-            
-            # Remove any additional frame or border
-            content_widget.setFrameShape(QFrame.NoFrame)
-            content_widget.setLineWidth(0)
-            
-            # Calculate approximate height based on content
-            line_count = json_str.count('\n') + 1
-            content_height = min(max(line_count * 20, 100), 500)  # Between 100 and 500 pixels
-            content_widget.setMinimumHeight(content_height)
-            
-            # Make it expand vertically with content
-            content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            content_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            if is_user:
+                # For user messages, use QTextEdit with fixed height and scrollbars
+                content_widget = QTextEdit()
+                content_widget.setReadOnly(True)
+                content_widget.setFont(QFont("Courier New", 9))
+                content_widget.setText(json_str)
+                content_widget.setFrameShape(QFrame.NoFrame)
+                content_widget.setLineWidth(0)
+                content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                content_widget.setMaximumHeight(100)
+                content_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            else:
+                # For assistant messages with JSON, use QLabel with pre-formatted text to ensure it shows fully
+                line_count = json_str.count('\n') + 1
+                content_widget = QLabel()
+                content_widget.setTextFormat(Qt.PlainText)
+                content_widget.setFont(QFont("Courier New", 9))
+                content_widget.setText(json_str)
+                content_widget.setWordWrap(True)
+                content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                # Ensure label expands to fit all text
+                content_widget.setMinimumHeight(line_count * 16)
             
             layout.addWidget(content_widget)
             
@@ -336,43 +330,42 @@ class MessageWidget(QFrame):
                 # Use our new highlight function to include code fences
                 html_content = highlight_with_fenced_code(content)
                 
-                content_widget = QTextEdit()
-                content_widget.setReadOnly(True)
-                content_widget.setHtml(html_content)
-                
-                # Remove any additional frame or border
-                content_widget.setFrameShape(QFrame.NoFrame)
-                content_widget.setLineWidth(0)
-                
-                # Calculate height based on content
-                line_count = content.count('\n') + 1
-                content_height = min(max(line_count * 20, 100), 600)  # Between 100 and 600 pixels
-                content_widget.setMinimumHeight(content_height)
-                
-                # Make it expand vertically with content
-                content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-                content_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+                if is_user:
+                    # For user messages, use QTextEdit with scrollbars
+                    content_widget = QTextEdit()
+                    content_widget.setReadOnly(True)
+                    content_widget.setHtml(html_content)
+                    content_widget.setFrameShape(QFrame.NoFrame)
+                    content_widget.setLineWidth(0)
+                    content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                    content_widget.setMaximumHeight(100)
+                    content_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+                else:
+                    # For assistant messages with markdown, use QTextBrowser which handles HTML better
+                    from PyQt5.QtWidgets import QTextBrowser
+                    content_widget = QTextBrowser()
+                    content_widget.setOpenExternalLinks(True)
+                    content_widget.setReadOnly(True)
+                    content_widget.setHtml(html_content)
+                    content_widget.setFrameShape(QFrame.NoFrame)
+                    content_widget.setLineWidth(0)
+                    content_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+                    
+                    # Better height calculation for HTML content
+                    content_widget.document().setDocumentMargin(0)
+                    content_widget.document().adjustSize()
+                    line_count = content.count('\n') + 1
+                    content_widget.setMinimumHeight(max(content_widget.document().size().height() + 20, line_count * 16))
                 
                 layout.addWidget(content_widget)
                 
             else:
-                # Regular text
-                content_widget = QTextEdit()
-                content_widget.setReadOnly(True)
-                content_widget.setText(content)
-                
-                # Remove any additional frame or border
-                content_widget.setFrameShape(QFrame.NoFrame)
-                content_widget.setLineWidth(0)
-                
-                # Calculate height based on content
-                line_count = content.count('\n') + 1
-                content_height = min(max(line_count * 20, 100), 400)  # Between 100 and 400 pixels
-                content_widget.setMinimumHeight(content_height)
-                
-                # Make it expand vertically with content
-                content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-                content_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+                # For simple text, use QLabel instead of QTextEdit
+                # This significantly reduces the vertical space required
+                content_widget = QLabel(content)
+                content_widget.setTextFormat(Qt.PlainText)
+                content_widget.setWordWrap(True)
+                content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 
                 layout.addWidget(content_widget)
         
@@ -388,9 +381,13 @@ class MessageWidget(QFrame):
                     url_label.setStyleSheet("color: #00FFCC;")
                     layout.addWidget(url_label)
         
-        # Set layout margins
-        layout.setContentsMargins(10, 10, 10, 10)
         self.setLayout(layout)
+        
+        # Different size policy for user vs assistant
+        if is_user:
+            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        else:
+            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
 class ChatArea(QScrollArea):
     """Scrollable area for chat messages"""
@@ -973,7 +970,7 @@ class ChatTab(QWidget):
                     if not self.current_completion_config:
                         self.current_completion_config = chat_completion_config.get_config()
                         
-                    # Add system message from current config
+                        # Add system message from current config
                         if self.current_completion_config and "system_message" in self.current_completion_config:
                             self.chat_history.add_message("system", self.current_completion_config["system_message"])
                         
