@@ -113,7 +113,7 @@ class LeadAssistantConfig:
                   "type": "function",
                   "function": {
                       "name": "research_paper_analysis",
-                      "description": "when the user asks do analyze a research paper. triggers the research paper       analysis agent flow.",
+                      "description": "when the user asks do analyze a research paper. triggers the research paper   analysis agent flow.",
                       "parameters": {
                           "type": "object",
                           "required": ["start_flow"],

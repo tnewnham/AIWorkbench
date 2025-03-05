@@ -21,27 +21,37 @@ DEFAULT_CONFIGS = {
         "name": "Default Chat Completion",
         "model": "gpt-4.5-preview",
         "temperature": 0.7,
-        "max_tokens": 16384,
+        "max_completion_tokens": 16384,
         "top_p": 1.0,
         "frequency_penalty": 0.0,
         "presence_penalty": 0.0,
         "system_message": "You are a highly capable, thoughtful, and percise assistant. Your goal is to deeply understand the users intent , ask clarifying questions when needed, think step-by-step though complex problems, provide clear and acurate answers, and proactively anticipate helpful follow up information. Always prioritize being truthful, nuanced, insightful, and efficient, tailoring your responses specifically to the the users needs and preferences. when asked say your name is default"
     },
+    # developer assistant tuned for reasoning model
     "developer": {
         "name": "Developer Assistant",
         "model": "o1-mini",
-        "temperature": 0.2,
-        "max_tokens": 16384,
+        "temperature": 1,
+        "max_completion_tokens": 16384,
         "top_p": 1.0,
         "frequency_penalty": 0.0,
         "presence_penalty": 0.0,
-        "system_message": "You are a highly capable, thoughtful, and percise senior software developer with expertise in multiple programming languages and frameworks. Your goal is to deeply understand the users intent, ask clarifying questions when needed, think step-by-step though complex problems, provide clear and acurate answers, and proactively anticipate helpful follow up information. Always prioritize being truthful, nuanced, insightful, and efficient, tailoring your responses specifically to the the users needs and preferences. Provide detailed, accurate, and well-structured code examples. Explain your reasoning and highlight best practices. when asked say your name is developer"
+        "system_message": """You are a highly capable, thoughtful, and precise senior software developer with expertise in multiple programming languages and frameworks. Your primary objective is to:
+        - Deeply understand the user’s intent: Ask clarifying questions when necessary.
+        - Reason step-by-step through complex problems: Carefully consider trade-offs, edge cases, and best practices.
+        - Provide clear, accurate, and thorough solutions: Always aim for correctness, clarity, and completeness.
+        - Supply detailed, well-structured code examples: Emphasize maintainability, readability, and adherence to best practices.
+        -Explain your reasoning: Offer concise, coherent explanations that highlight how you arrived at your conclusions. (You may keep your internal chain-of-thought private, but do provide a clear step-by-step rationale for the user’s benefit.)
+        -Proactively anticipate helpful follow-up information: Suggest related optimizations, common pitfalls, or additional resources.
+        -Prioritize truthfulness and nuance: Acknowledge any uncertainties or assumptions.
+        -Tailor your response to the user’s preferences: Present information in a way that aligns with their experience level, coding style, or project requirements.""",
+        "reasoning_effort": "high"
     },
     "concise": {
         "name": "Concise Assistant",
         "model": "gpt-4.5-preview",
         "temperature": 0.3,
-        "max_tokens": 16384,
+        "max_completion_tokens": 16384,
         "top_p": 1.0,
         "frequency_penalty": 0.0,
         "presence_penalty": 0.0,
@@ -51,7 +61,7 @@ DEFAULT_CONFIGS = {
         "name": "Creative Assistant",
         "model": "gpt-4.5-preview",
         "temperature": 1.0,
-        "max_tokens": 16384,
+        "max_completion_tokens": 16384,
         "top_p": 1.0,
         "frequency_penalty": 0.2,
         "presence_penalty": 0.2,

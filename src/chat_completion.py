@@ -122,17 +122,27 @@ class ChatCompletionClient:
             # Extract relevant parameters from config
             model = self.config.get("model", "gpt-4o")
             temperature = self.config.get("temperature", 0.7)
-            max_tokens = self.config.get("max_tokens", 4000)
+            max_completion_tokens = self.config.get("max_completion_tokens", 4000)
             top_p = self.config.get("top_p", 1.0)
             frequency_penalty = self.config.get("frequency_penalty", 0)
             presence_penalty = self.config.get("presence_penalty", 0)
             
-            # Make the API call
+            # Adjust roles for reasoning models if needed
+            is_reasoning_model = (
+                "reasoning_effort" in self.config
+                or (isinstance(model, str) and "o1-" in model)
+            )
+            if is_reasoning_model:
+                for msg_dict in message_dicts:
+                    if msg_dict["role"] == "system":
+                        msg_dict["role"] = "developer"
+            
+            # Now call OpenAI using max_completion_tokens
             response = self.openai_client.chat.completions.create(
                 model=model,
                 messages=message_dicts,
                 temperature=temperature,
-                max_tokens=max_tokens,
+                max_completion_tokens=max_completion_tokens,
                 top_p=top_p,
                 frequency_penalty=frequency_penalty,
                 presence_penalty=presence_penalty,
@@ -140,10 +150,8 @@ class ChatCompletionClient:
             )
             
             if stream:
-                # Return the stream object for the caller to iterate
                 return response
             else:
-                # Return just the content
                 return response.choices[0].message.content
                 
         except Exception as e:
@@ -321,30 +329,28 @@ def create_chat_completion(messages: List[Dict[str, str]], config: Dict[str, Any
         # Extract configuration parameters
         model = config.get("model", "gpt-4o")
         temperature = config.get("temperature", 0.7)
-        max_tokens = config.get("max_tokens", 2000)
+        max_completion_tokens = config.get("max_completion_tokens", 2000)
         top_p = config.get("top_p", 1.0)
         frequency_penalty = config.get("frequency_penalty", 0.0)
         presence_penalty = config.get("presence_penalty", 0.0)
         
-        # Make the API call
+        # Make the API call using max_completion_tokens
         response = openai.chat.completions.create(
             model=model,
             messages=messages,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_completion_tokens,
             top_p=top_p,
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty
         )
         
-        # Extract and return the response text
         if response.choices and len(response.choices) > 0:
             return response.choices[0].message.content
         else:
             return "No response generated."
         
     except Exception as e:
-        # Handle errors
         error_message = f"Error creating chat completion: {str(e)}"
         print(error_message)
         return error_message

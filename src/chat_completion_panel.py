@@ -305,11 +305,11 @@ class ChatCompletionPanel(QWidget):
         details = f"Name: {config.get('name', config_name)}\n"
         details += f"Model: {config.get('model', 'Not specified')}\n"
         details += f"Temperature: {config.get('temperature', 'Not specified')}\n"
-        details += f"Max Tokens: {config.get('max_tokens', 'Not specified')}\n"
+        details += f"Max Tokens: {config.get('max_completion_tokens', 'Not specified')}\n"
         
         # Add other parameters if present
         for key, value in config.items():
-            if key not in ['name', 'model', 'temperature', 'max_tokens', 'system_message']:
+            if key not in ['name', 'model', 'temperature', 'max_completion_tokens', 'system_message']:
                 details += f"{key}: {value}\n"
         
         # Add system message
